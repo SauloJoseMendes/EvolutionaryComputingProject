@@ -1,3 +1,5 @@
+from collections import deque
+
 import networkx as nx
 import evogym
 from evogym.envs import *
@@ -142,18 +144,18 @@ def mutate_structure(robot_graph: nx.DiGraph, mutation_rate=MUTATION_RATE):
         handler.mutate_node_parameters,
         handler.add_new_node,
         handler.mutate_connection_parameters,
-        handler.add_remove_connections,
-        handler.garbage_collect_nodes
+        handler.add_remove_connections
     ]
 
-    num_to_apply = random.choice([1, 2])  # Choose to apply either one or two mutation techniques
+    num_to_apply = random.choice([1, 2])
     techniques_to_apply = random.sample(mutation_techniques, num_to_apply)
 
-    mutated_graph = robot_graph.copy()  # Create a copy to avoid modifying the original during iteration
+    mutated_graph = robot_graph.copy()
 
     for technique in techniques_to_apply:
         mutated_graph = technique(mutated_graph)
 
+    mutated_graph = MutationHandler.garbage_collect_nodes(mutated_graph)
     return mutated_graph
 
 
@@ -166,22 +168,32 @@ def elitism(population, fitnesses, elite_size):
 # ===== FITNESS EVALUATION =====
 
 def convert_to_evogym_format(graph, grid_size=(5, 5)):
+    # Remove disconnected nodes
+    graph = MutationHandler.garbage_collect_nodes(graph)
+
     rows, cols = grid_size
     grid = np.zeros((rows, cols), dtype=int)
-    num_nodes = rows * cols
-    node_index_to_coords = {i: (i // cols, i % cols) for i in range(num_nodes)}
+    visited = set()
 
-    # Place graph nodes onto the grid
-    placed_count = 0
-    available_indices = list(range(num_nodes))
-    random.shuffle(available_indices)  # Shuffle to avoid always placing at the start
+    start_node = list(graph.nodes())[0]  # Pick an arbitrary starting node
+    queue = deque([(start_node, (0, 0))])  # Start BFS from (0,0)
 
-    for node_index, data in graph.nodes(data=True):
-        if placed_count < num_nodes and available_indices:
-            grid_index = available_indices.pop(0)
-            row, col = node_index_to_coords[grid_index]
-            grid[row, col] = data.get('type', 1)
-            placed_count += 1
+    while queue:
+        node, (r, c) = queue.popleft()
+
+        if node in visited or not (0 <= r < rows and 0 <= c < cols):
+            continue
+
+        grid[r, c] = node  # Assign node index to grid
+        visited.add(node)
+
+        # Process neighbors (ensuring correct adjacency)
+        neighbors = list(graph.successors(node))  # Directed edges
+        possible_positions = [(r, c + 1), (r + 1, c), (r, c - 1), (r - 1, c)]  # Right, Down, Left, Up
+
+        for neighbor, pos in zip(neighbors, possible_positions):
+            if neighbor not in visited:
+                queue.append((neighbor, pos))  # Add next node with its grid position
 
     connectivity = evogym.get_full_connectivity(grid)
     return grid, connectivity
@@ -189,18 +201,18 @@ def convert_to_evogym_format(graph, grid_size=(5, 5)):
 
 def evaluate_structure_fitness(robot_graph: nx.DiGraph, view=False):
     structure, connectivity = convert_to_evogym_format(robot_graph)
-    if evogym.is_connected(structure) is False:
+    if (evogym.is_connected(structure) is False or
+            connectivity.shape[1] == 0 or
+            evogym.has_actuator(structure) is False):
         return -np.inf
-
     try:
-        # Use gym.make as per your professor's working example
         env = gym.make('Walker-v0', max_episode_steps=STEPS, body=structure, connections=connectivity)
         action_size = env.action_space.shape[0]
         controller = Controller(controller_type=CONTROLLER_TYPE, action_size=action_size)
 
         current_sim = env.sim
         current_viewer = evogym.EvoViewer(current_sim)
-        current_viewer.track_objects('robot')
+        current_viewer.track_objects(('robot',))
 
         state = env.reset()[0]  # Get initial state
         t_reward = 0
@@ -219,8 +231,8 @@ def evaluate_structure_fitness(robot_graph: nx.DiGraph, view=False):
         env.close()
         return t_reward
     except ValueError as error_fitness:
-        print(f"Error during environment creation: {error_fitness}")
-        return -np.inf  # Assign a low fitness for invalid structures
+        print(f"Error during environment creation, discarding unusable structure: {error_fitness}")
+        return -np.inf
 
 
 # ===== EVOLUTIONARY ALGORITHM =====
@@ -282,4 +294,4 @@ if __name__ == "__main__":
 
     # Visualize the best structure
     print("Visualizing the best robot...")
-    evaluate_structure_fitness(best_structure)
+    evaluate_structure_fitness(best_structure, view=True)

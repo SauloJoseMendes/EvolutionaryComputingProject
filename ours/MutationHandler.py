@@ -11,18 +11,24 @@ class MutationHandler:
         for node, data in graph.nodes(data=True):
             if "type" in data and random.random() < self.mutation_prob:
                 data["type"] = random.choice([1, 2, 3, 4])
-            if "weight" in data and random.random() < self.mutation_prob:
-                adjustment = np.random.normal(0, 0.1)
-                data["weight"] += adjustment
-                if random.random() < 0.05:
-                    data["weight"] = -data["weight"]
-                data["weight"] = max(0.0, min(data["weight"], 10.0))
         return graph
 
     def add_new_node(self, graph):
         if random.random() < self.mutation_prob:
             new_node_id = max(graph.nodes()) + 1 if graph.nodes() else 0
             graph.add_node(new_node_id, type=random.choice([1, 2, 3, 4]), weight=random.uniform(0.5, 5.0))
+
+            # Add a connection to an existing node if the graph is not empty
+            existing_nodes = list(graph.nodes())
+            if existing_nodes and new_node_id in graph.nodes():  # Ensure the new node was actually added
+                existing_node = random.choice(existing_nodes)
+                # Add a directed edge from the new node to the existing node
+                graph.add_edge(new_node_id, existing_node, weight=random.uniform(0.1, 1.0))
+                # Or, add a directed edge from the existing node to the new node
+                # graph.add_edge(existing_node, new_node_id, weight=random.uniform(0.1, 1.0))
+                # Or, add an undirected edge (if your graph is treated as undirected for connectivity)
+                # graph.add_edge(existing_node, new_node_id, weight=random.uniform(0.1, 1.0)) # For NetworkX DiGraph, this is still a directed edge
+
         return graph
 
     def mutate_connection_parameters(self, graph):
@@ -54,7 +60,8 @@ class MutationHandler:
                     break
         return graph
 
-    def garbage_collect_nodes(self, graph):
+    @staticmethod
+    def garbage_collect_nodes(graph):
         if 0 in graph.nodes():
             reachable_nodes = set(nx.descendants(graph, 0))
             reachable_nodes.add(0)

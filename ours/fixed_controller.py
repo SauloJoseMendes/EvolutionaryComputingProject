@@ -168,33 +168,53 @@ def elitism(population, fitnesses, elite_size):
 # ===== FITNESS EVALUATION =====
 
 def convert_to_evogym_format(graph, grid_size=(5, 5)):
+    """
+    Converts a directed graph into a 5x5 matrix representation using BFS-based placement.
+    Ensures that:
+    - The graph remains a connected component in the grid.
+    - Nodes are placed adjacent to their neighbors where possible.
+    - The matrix does not exceed the 5x5 limit.
+
+    Args:
+        graph (networkx.DiGraph): The directed graph representing the structure.
+        grid_size (tuple): The size of the grid (default is 5x5).
+
+    Returns:
+        tuple: A 5x5 numpy array representing the structure and its connectivity.
+    """
     # Remove disconnected nodes
     graph = MutationHandler.garbage_collect_nodes(graph)
 
     rows, cols = grid_size
-    grid = np.zeros((rows, cols), dtype=int)
+    grid = np.zeros((rows, cols), dtype=int)  # Initialize an empty grid
     visited = set()
 
-    start_node = list(graph.nodes())[0]  # Pick an arbitrary starting node
-    queue = deque([(start_node, (0, 0))])  # Start BFS from (0,0)
+    # Start BFS from a central position to avoid running out of space
+    start_node = list(graph.nodes())[0]  # Pick an arbitrary start node
+    queue = deque([(start_node, (rows // 2, cols // 2))])  # Start at center of grid
+    visited.add(start_node)
+    grid[rows // 2, cols // 2] = graph.nodes[start_node]['type']  # Store block type
+
+    # Directions for right, down, left, up (ensures adjacency)
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
 
     while queue:
         node, (r, c) = queue.popleft()
 
-        if node in visited or not (0 <= r < rows and 0 <= c < cols):
-            continue
+        # Iterate over node's successors (maintaining adjacency structure)
+        for direction, neighbor in zip(directions, graph.successors(node)):
+            new_r, new_c = r + direction[0], c + direction[1]
 
-        grid[r, c] = node  # Assign node index to grid
-        visited.add(node)
+            # Ensure valid placement in the grid
+            if (
+                    0 <= new_r < rows and 0 <= new_c < cols and
+                    grid[new_r, new_c] == 0 and neighbor not in visited
+            ):
+                grid[new_r, new_c] = graph.nodes[neighbor]['type']  # Assign block type
+                visited.add(neighbor)
+                queue.append((neighbor, (new_r, new_c)))  # Continue BFS
 
-        # Process neighbors (ensuring correct adjacency)
-        neighbors = list(graph.successors(node))  # Directed edges
-        possible_positions = [(r, c + 1), (r + 1, c), (r, c - 1), (r - 1, c)]  # Right, Down, Left, Up
-
-        for neighbor, pos in zip(neighbors, possible_positions):
-            if neighbor not in visited:
-                queue.append((neighbor, pos))  # Add next node with its grid position
-
+    # Compute full connectivity for Evogym
     connectivity = evogym.get_full_connectivity(grid)
     return grid, connectivity
 

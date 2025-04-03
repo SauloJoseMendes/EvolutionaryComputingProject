@@ -11,13 +11,13 @@ import random
 from ours.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
-NUM_GENERATIONS = 50
+NUM_GENERATIONS = 5
 POPULATION_SIZE = 20
 STEPS = 500
 SCENARIO = 'DownStepper-v0'  # or 'BridgeWalker-v0'
 CONTROLLER_TYPE = 'alternating_gait'  # Options: 'alternating_gait', 'sinusoidal_wave', 'hopping_motion'
-MUTATION_RATE = 0.1
-ELITISM_SIZE = 2  # Number of top individuals to preserve
+MUTATION_RATE = 0.4
+ELITISM_SIZE = 2
 SEED = 42
 np.random.seed(SEED)
 random.seed(SEED)
@@ -227,32 +227,65 @@ def evaluate_structure_fitness(robot_graph: nx.DiGraph, view=False):
         return -np.inf
     try:
         env = gym.make('Walker-v0', max_episode_steps=STEPS, body=structure, connections=connectivity)
-        action_size = env.action_space.shape[0]
-        controller = Controller(controller_type=CONTROLLER_TYPE, action_size=action_size)
 
+        env.reset()
         current_sim = env.sim
         current_viewer = evogym.EvoViewer(current_sim)
-        current_viewer.track_objects(('robot',))
-
-        state = env.reset()[0]  # Get initial state
+        current_viewer.track_objects('robot')
+        action_size = current_sim.get_dim_action_space('robot')
         t_reward = 0
+        controller = Controller(controller_type=CONTROLLER_TYPE, action_size=action_size)
         for t in range(STEPS):
             if view:
-                viewer.render('screen')
+                current_viewer.render('screen')
             action = controller.run(t)
             state, reward, terminated, truncated, info = env.step(action)
             t_reward += reward
             if terminated or truncated:
                 env.reset()
                 break
-
-        if view:
-            current_viewer.close()
+        current_viewer.close()
         env.close()
         return t_reward
     except ValueError as error_fitness:
         print(f"Error during environment creation, discarding unusable structure: {error_fitness}")
         return -np.inf
+
+
+def count_duplicate_digraphs(graph_list):
+    """
+    Counts the number of duplicate directed graphs in a list of nx.DiGraph objects.
+
+    Args:
+        graph_list (list): A list of networkx.DiGraph objects
+
+    Returns:
+        tuple: (total_duplicates, duplicate_groups)
+            total_duplicates: total number of duplicate graphs (excluding originals)
+            duplicate_groups: a dictionary with {graph: count} for duplicates
+    """
+    duplicate_groups = {}
+
+    for graph in graph_list:
+        # Create a hashable representation of the graph
+        # Convert all lists to tuples to ensure hashability
+        edge_data = tuple(sorted(
+            (u, v, tuple(sorted(d.items())) if d else ())
+            for u, v, d in graph.edges(data=True)
+        ))
+        node_data = tuple(sorted(
+            (n, tuple(sorted(d.items())) if d else ())
+            for n, d in graph.nodes(data=True)
+        ))
+        graph_hash = (edge_data, node_data)
+
+        # Count occurrences
+        duplicate_groups[graph_hash] = duplicate_groups.get(graph_hash, 0) + 1
+
+    # Calculate total duplicates (occurrences beyond the first)
+    total_duplicates = sum(count - 1 for count in duplicate_groups.values() if count > 1)
+
+    return total_duplicates
 
 
 # ===== EVOLUTIONARY ALGORITHM =====
@@ -303,6 +336,7 @@ def evolutionary_algorithm():
         population = [combined[i] for i in sorted_indices[:POPULATION_SIZE]]
 
         print(f"Gen {generation + 1}: Best Fitness = {current_best_fitness:.2f}")
+        print(f"Gen {generation + 1}: {count_duplicate_digraphs(population)} duplicates")
 
     return current_best_structure, current_best_fitness
 

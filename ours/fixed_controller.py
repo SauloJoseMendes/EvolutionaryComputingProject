@@ -1,30 +1,42 @@
 from collections import deque
-
+import torch
 import networkx as nx
 import evogym
 from evogym.envs import *
-
+from concurrent.futures import ProcessPoolExecutor
 from Controller import Controller
 import numpy as np
 import random
+import pandas as pd
 
 from ours.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
-NUM_GENERATIONS = 5
-POPULATION_SIZE = 20
+BATCH_SIZE = 1
+NUM_GENERATIONS = 1
+POPULATION_SIZE = 100
 STEPS = 500
-SCENARIO = 'DownStepper-v0'  # or 'BridgeWalker-v0'
+SCENARIO = 'Walker-v0'
 CONTROLLER_TYPE = 'alternating_gait'  # Options: 'alternating_gait', 'sinusoidal_wave', 'hopping_motion'
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 SEED = 42
-np.random.seed(SEED)
-random.seed(SEED)
 
 
 # ===== STRUCTURE REPRESENTATION =====
-# grafo em cadeia
+def enforce_max_nodes(graph: nx.DiGraph, max_nodes: int = 25) -> nx.DiGraph:
+    """Ensure the graph has at most `max_nodes` nodes.
+    If it exceeds, remove nodes arbitrarily to meet the limit."""
+    if graph.number_of_nodes() <= max_nodes:
+        return graph
+
+    # If too many nodes, remove extras
+    nodes_to_remove = list(graph.nodes)[max_nodes:]
+    graph.remove_nodes_from(nodes_to_remove)
+
+    return graph
+
+
 def generate_fully_connected_graph(grid_size=(5, 5)):
     rows, _ = grid_size
     num_nodes = random.randint(3, 8)  # Generate a small number of nodes
@@ -48,7 +60,7 @@ def generate_fully_connected_graph(grid_size=(5, 5)):
             connected_component.add(target_node)
             remaining_nodes.remove(target_node)
 
-    return graph
+    return enforce_max_nodes(graph)
 
 
 # ===== EVOLUTIONARY OPERATORS =====
@@ -142,10 +154,12 @@ def mutate_structure(robot_graph: nx.DiGraph, mutation_rate=MUTATION_RATE):
 
     mutation_techniques = [
         handler.mutate_node_parameters,
-        handler.add_new_node,
         handler.mutate_connection_parameters,
         handler.add_remove_connections
     ]
+
+    if len(robot_graph.nodes()) <= 25:
+        mutation_techniques.append(handler.add_new_node)
 
     num_to_apply = random.choice([1, 2])
     techniques_to_apply = random.sample(mutation_techniques, num_to_apply)
@@ -156,7 +170,7 @@ def mutate_structure(robot_graph: nx.DiGraph, mutation_rate=MUTATION_RATE):
         mutated_graph = technique(mutated_graph)
 
     mutated_graph = MutationHandler.garbage_collect_nodes(mutated_graph)
-    return mutated_graph
+    return enforce_max_nodes(mutated_graph)
 
 
 def elitism(population, fitnesses, elite_size):
@@ -167,7 +181,7 @@ def elitism(population, fitnesses, elite_size):
 
 # ===== FITNESS EVALUATION =====
 
-def convert_to_evogym_format(graph, grid_size=(5, 5)):
+def graph_to_matrix(graph, grid_size=(5, 5)):
     """
     Converts a directed graph into a 5x5 matrix representation using BFS-based placement.
     Ensures that:
@@ -186,7 +200,7 @@ def convert_to_evogym_format(graph, grid_size=(5, 5)):
     graph = MutationHandler.garbage_collect_nodes(graph)
 
     rows, cols = grid_size
-    grid = np.zeros((rows, cols), dtype=int)  # Initialize an empty grid
+    grid = np.zeros((rows, cols), dtype=int)
     visited = set()
 
     # Start BFS from a central position to avoid running out of space
@@ -219,37 +233,58 @@ def convert_to_evogym_format(graph, grid_size=(5, 5)):
     return grid, connectivity
 
 
+def filter_results(results: List):
+    fitness_list = []
+    reward_list = []
+    for res in results:
+        if isinstance(res, tuple):
+            fitness, reward = res
+            fitness_list.append(fitness)
+            reward_list.append(reward)
+        else:
+            # print("Invalid fitness or reward")
+            fitness_list.append(0)
+            reward_list.append(0)
+    return fitness_list, reward_list
+
+
 def evaluate_structure_fitness(robot_graph: nx.DiGraph, view=False):
-    structure, connectivity = convert_to_evogym_format(robot_graph)
+    structure, connectivity = graph_to_matrix(robot_graph)
     if (evogym.is_connected(structure) is False or
             connectivity.shape[1] == 0 or
             evogym.has_actuator(structure) is False):
-        return -np.inf
+        return np.nan
     try:
         env = gym.make('Walker-v0', max_episode_steps=STEPS, body=structure, connections=connectivity)
-
         env.reset()
         current_sim = env.sim
         current_viewer = evogym.EvoViewer(current_sim)
-        current_viewer.track_objects('robot')
+        current_viewer.track_objects(('robot',))
         action_size = current_sim.get_dim_action_space('robot')
-        t_reward = 0
+        t, t_reward, final_pos, average_speed = 0, 0, 0, 0
         controller = Controller(controller_type=CONTROLLER_TYPE, action_size=action_size)
+        initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
         for t in range(STEPS):
             if view:
                 current_viewer.render('screen')
             action = controller.run(t)
             state, reward, terminated, truncated, info = env.step(action)
             t_reward += reward
+            average_speed += current_sim.object_vel_at_time(current_sim.get_time(), 'robot').mean()
             if terminated or truncated:
+                final_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
                 env.reset()
                 break
+        distance = final_pos - initial_pos
+        if t != 0:
+            average_speed /= t
+        final_fitness = (distance * 5) + average_speed * 2
         current_viewer.close()
         env.close()
-        return t_reward
+        return final_fitness, t_reward
     except ValueError as error_fitness:
         print(f"Error during environment creation, discarding unusable structure: {error_fitness}")
-        return -np.inf
+        return np.nan
 
 
 def count_duplicate_digraphs(graph_list):
@@ -290,62 +325,101 @@ def count_duplicate_digraphs(graph_list):
 
 # ===== EVOLUTIONARY ALGORITHM =====
 def evolutionary_algorithm():
-    """Main EA loop with modular operators."""
+    """Main EA loop with modular operators (parallelized fitness evaluation)."""
+    np.random.seed(SEED)
+    random.seed(SEED)
+    torch.manual_seed(SEED)
     population = [generate_fully_connected_graph() for _ in range(POPULATION_SIZE)]
-    current_best_structure = None
-    current_best_fitness = -np.inf
+    best_structures = np.empty((NUM_GENERATIONS, 5, 5))
+    best_fitnesses = np.full(NUM_GENERATIONS, -np.inf)
+    best_rewards = np.full(NUM_GENERATIONS, -np.inf)
 
-    for generation in range(NUM_GENERATIONS):
-        # Evaluate fitness
-        fitnesses = [evaluate_structure_fitness(ind) for ind in population]
+    avg_fitness = np.full(NUM_GENERATIONS, np.nan)
+    avg_rewards = np.full(NUM_GENERATIONS, np.nan)
+    with (ProcessPoolExecutor() as executor):
+        for generation in range(NUM_GENERATIONS):
+            # Parallel fitness evaluation
+            fitnesses, rewards = \
+                filter_results(list(executor.map(evaluate_structure_fitness, population)))
 
-        # Track best individual
-        current_best_idx = np.argmax(fitnesses)
-        if fitnesses[current_best_idx] > current_best_fitness:
-            current_best_fitness = fitnesses[current_best_idx]
-            current_best_structure = population[current_best_idx]
+            # Track best individual
+            current_best_fitness_idx = np.argmax(fitnesses)
+            current_best_reward_idx = np.argmax(rewards)
 
-        # Selection
-        parents = tournament_selection(population, fitnesses)
+            best_fitnesses[generation] = fitnesses[current_best_fitness_idx]
+            best_structures[generation] = graph_to_matrix(population[current_best_fitness_idx])[0]
+            best_rewards[generation] = rewards[current_best_reward_idx]
 
-        # Crossover
-        offspring = []
-        for i in range(0, len(parents), 2):
-            # Handle the case where there's an odd number of parents
-            if i + 1 < len(parents):
-                child1 = grafting_crossover(parents[i], parents[i + 1])
-                child2 = grafting_crossover(parents[i + 1], parents[i])
-                offspring.extend([child1, child2])
-            else:
-                offspring.append(parents[i].copy())  # If odd, just copy the last parent
+            print(graph_to_matrix(population[current_best_fitness_idx]))
 
-        # Mutation
-        offspring = [mutate_structure(child) for child in offspring]
+            # Track average
+            avg_fitness[generation] = np.nanmean(fitnesses)
+            avg_rewards[generation] = np.nanmean(rewards)
 
-        # Elitism: Preserve top individuals
-        elites = elitism(population, fitnesses, ELITISM_SIZE)
+            # Selection
+            parents = tournament_selection(population, fitnesses)
 
-        # Survivor Selection (Elites + Offspring)
-        combined = elites + offspring
-        # Ensure we don't exceed population size due to elitism
-        combined = combined[:POPULATION_SIZE]
-        combined_fitnesses = [evaluate_structure_fitness(ind) for ind in combined]
+            # Crossover
+            offspring = []
+            for i in range(0, len(parents), 2):
+                if i + 1 < len(parents):
+                    child1 = grafting_crossover(parents[i], parents[i + 1])
+                    child2 = grafting_crossover(parents[i + 1], parents[i])
+                    offspring.extend([child1, child2])
+                else:
+                    offspring.append(parents[i].copy())
 
-        # Take the top POPULATION_SIZE individuals based on fitness
-        sorted_indices = np.argsort(combined_fitnesses)[::-1]  # Sort in descending order of fitness
-        population = [combined[i] for i in sorted_indices[:POPULATION_SIZE]]
+            # Mutation
+            offspring = [mutate_structure(child) for child in offspring]
 
-        print(f"Gen {generation + 1}: Best Fitness = {current_best_fitness:.2f}")
-        print(f"Gen {generation + 1}: {count_duplicate_digraphs(population)} duplicates")
+            # Elitism
+            elites = elitism(population, fitnesses, ELITISM_SIZE)
+            print(elites[-1])
+            # Survivor Selection (Elites + Offspring)
+            combined = elites + offspring
+            combined = combined[:POPULATION_SIZE]
 
-    return current_best_structure, current_best_fitness
+            # Parallel fitness for combined
+            combined_fitnesses, combined_rewards \
+                = filter_results(list(executor.map(evaluate_structure_fitness, combined)))
+
+            # Take top individuals
+            sorted_indices = np.argsort(combined_fitnesses)[::-1]
+            population = [combined[i] for i in sorted_indices[:POPULATION_SIZE]]
+
+            print(f"Gen {generation + 1}: Best Fitness = {best_fitnesses[generation]:.2f}, "
+                  f"Its Reward = {best_rewards[generation]:.2f}")
+            print(f"Gen {generation + 1}: {count_duplicate_digraphs(population)} duplicates")
+
+    return best_structures, best_fitnesses, best_rewards, avg_fitness, avg_rewards
+
+
+def save_to_csv(data_csv):
+
+    # Create a DataFrame
+    df = pd.DataFrame(data_csv)
+
+    filename = f"./data/fixed_controller/{SCENARIO}/" + time.strftime("%Y%m%d-%H%M%S") + ".csv"
+    # Save to CSV
+    df.to_csv(filename, index=False)
 
 
 # ===== RUN AND VISUALIZE =====
 if __name__ == "__main__":
-    best_structure, best_fitness = evolutionary_algorithm()
-    print(f"Best Fitness Achieved: {best_fitness}")
-
-    # Visualize the best structure
-    print("Visualizing the best robot...")
-    evaluate_structure_fitness(best_structure, view=True)
+    for iteration in range(BATCH_SIZE):
+        print(f"===== Iteration {iteration} =====")
+        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm()
+        print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
+        print(f"Best Reward Achieved: {best_rewards[-1]}")
+        data = {
+            "Best Fitness": best_fitnesses,
+            "Best Reward": best_rewards,
+            "Best Structure": [",".join(map(str, mat.flatten())) for mat in best_structures],
+            "Average Fitness": avg_fitness,
+            "Average Reward": avg_reward
+        }
+        save_to_csv(data)
+        # Visualize the best structure
+        # print("Visualizing the best robot...")
+        # evaluate_structure_fitness(best_structures[-1], view=True)
+        print("============================")

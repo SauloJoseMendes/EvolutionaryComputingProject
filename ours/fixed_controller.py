@@ -13,7 +13,7 @@ from ours.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 1
+NUM_GENERATIONS = 50
 POPULATION_SIZE = 100
 STEPS = 500
 SCENARIO = 'Walker-v0'
@@ -331,12 +331,12 @@ def evolutionary_algorithm():
     torch.manual_seed(SEED)
     population = [generate_fully_connected_graph() for _ in range(POPULATION_SIZE)]
     best_structures = np.empty((NUM_GENERATIONS, 5, 5))
-    best_fitnesses = np.full(NUM_GENERATIONS, -np.inf)
-    best_rewards = np.full(NUM_GENERATIONS, -np.inf)
+    best_fitnesses = np.empty(NUM_GENERATIONS)
+    best_rewards = np.empty(NUM_GENERATIONS)
 
     avg_fitness = np.full(NUM_GENERATIONS, np.nan)
     avg_rewards = np.full(NUM_GENERATIONS, np.nan)
-    with (ProcessPoolExecutor() as executor):
+    with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
         for generation in range(NUM_GENERATIONS):
             # Parallel fitness evaluation
             fitnesses, rewards = \
@@ -399,7 +399,7 @@ def save_to_csv(data_csv):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
 
-    filename = f"./data/fixed_controller/{SCENARIO}/" + time.strftime("%Y%m%d-%H%M%S") + ".csv"
+    filename = f"./data/fixed_controller/{SCENARIO}/" + time.strftime("%Y_%m_%d-%H:%M:%S") + ".csv"
     # Save to CSV
     df.to_csv(filename, index=False)
 
@@ -412,11 +412,11 @@ if __name__ == "__main__":
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
         data = {
+            "Average Fitness": avg_fitness,
+            "Average Reward": avg_reward,
             "Best Fitness": best_fitnesses,
             "Best Reward": best_rewards,
             "Best Structure": [",".join(map(str, mat.flatten())) for mat in best_structures],
-            "Average Fitness": avg_fitness,
-            "Average Reward": avg_reward
         }
         save_to_csv(data)
         # Visualize the best structure

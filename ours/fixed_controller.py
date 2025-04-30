@@ -14,7 +14,7 @@ from ours.MutationHandler import MutationHandler
 # ===== PARAMETERS =====
 BATCH_SIZE = 1
 NUM_GENERATIONS = 50
-POPULATION_SIZE = 100
+POPULATION_SIZE = 200
 STEPS = 500
 SCENARIO = 'Walker-v0'
 CONTROLLER_TYPE = 'alternating_gait'  # Options: 'alternating_gait', 'sinusoidal_wave', 'hopping_motion'

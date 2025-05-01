@@ -14,7 +14,7 @@ from implementation.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 1
+NUM_GENERATIONS = 200
 POPULATION_SIZE = 200
 STEPS = 500
 SCENARIO = 'Walker-v0'

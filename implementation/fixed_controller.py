@@ -14,7 +14,7 @@ from implementation.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 20
+NUM_GENERATIONS = 1
 POPULATION_SIZE = 200
 STEPS = 500
 SCENARIO = 'Walker-v0'
@@ -421,7 +421,7 @@ def save_to_csv(data_csv):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
 
-    filename = f"./data/fixed_controller/{SCENARIO}/" + time.strftime("%Y_%m_%d-%H:%M:%S") + ".csv"
+    filename = f"./data/fixed_controller/{SCENARIO}/" + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
     # Save to CSV
     df.to_csv(filename, index=False)
 

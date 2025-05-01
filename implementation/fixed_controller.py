@@ -10,7 +10,7 @@ import numpy as np
 import random
 import pandas as pd
 
-from ours.MutationHandler import MutationHandler
+from implementation.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
 BATCH_SIZE = 1

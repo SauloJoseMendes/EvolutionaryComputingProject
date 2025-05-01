@@ -1,3 +1,4 @@
+import copy
 from collections import deque
 import torch
 import networkx as nx
@@ -13,7 +14,7 @@ from ours.MutationHandler import MutationHandler
 
 # ===== PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 50
+NUM_GENERATIONS = 200
 POPULATION_SIZE = 200
 STEPS = 500
 SCENARIO = 'Walker-v0'
@@ -39,7 +40,7 @@ def enforce_max_nodes(graph: nx.DiGraph, max_nodes: int = 25) -> nx.DiGraph:
 
 def generate_fully_connected_graph(grid_size=(5, 5)):
     rows, _ = grid_size
-    num_nodes = random.randint(3, 8)  # Generate a small number of nodes
+    num_nodes = random.randint(3, 15)  # Generate a small number of nodes
     graph = nx.DiGraph()
     # Add nodes
     for i in range(num_nodes):
@@ -70,7 +71,7 @@ def tournament_selection(population, fitnesses, tournament_size=3):
     for _ in range(len(population)):
         candidates = np.random.choice(len(population), size=tournament_size, replace=False)
         winner = candidates[np.argmax([fitnesses[c] for c in candidates])]
-        selected.append(population[winner])
+        selected.append(copy.deepcopy(population[winner]))
     return selected
 
 
@@ -95,11 +96,11 @@ def grafting_crossover(parent1: nx.DiGraph, parent2: nx.DiGraph) -> nx.DiGraph:
         raise ValueError("Both parents must be directed graphs (DiGraph).")
 
     # Create a copy of parent1 to serve as the child graph.
-    child = parent1.copy()
+    child = copy.deepcopy(parent1)
 
     # If parent1 is empty, simply return a copy of parent2.
     if len(child) == 0:
-        return parent2.copy()
+        return copy.deepcopy(parent2)
 
     # Step 1: Select an attachment point in parent1 where the graft will be added.
     attachment_point = random.choice(list(child.nodes()))
@@ -173,10 +174,37 @@ def mutate_structure(robot_graph: nx.DiGraph, mutation_rate=MUTATION_RATE):
     return enforce_max_nodes(mutated_graph)
 
 
-def elitism(population, fitnesses, elite_size):
+def elitism(population, fitnesses, elite_size=2):
     """Preserves the top `elite_size` individuals."""
     elite_indices = np.argsort(fitnesses)[-elite_size:]
-    return [population[i] for i in elite_indices]
+    return [copy.deepcopy(population[i]) for i in elite_indices]
+
+
+def remove_duplicates_and_replace(
+        graphs: List[nx.DiGraph],
+        grid_size=(5, 5),
+        max_nodes: int = 25) -> List[nx.DiGraph]:
+    unique_graphs = []
+    counter = 0
+    for graph in graphs:
+        is_duplicate = any(nx.is_isomorphic(graph, other,
+                                            node_match=lambda x, y: x['type'] == y['type']) for other in unique_graphs)
+        if not is_duplicate:
+            unique_graphs.append(graph)
+        else:
+            counter+=1
+            new_graph = generate_fully_connected_graph(grid_size)
+            new_graph = enforce_max_nodes(new_graph, max_nodes)
+
+            # Ensure new_graph is not a duplicate either
+            while any(nx.is_isomorphic(new_graph, g,
+                                       node_match=lambda x, y: x['type'] == y['type']) for g in unique_graphs):
+                new_graph = generate_fully_connected_graph(grid_size)
+                new_graph = enforce_max_nodes(new_graph, max_nodes)
+
+            unique_graphs.append(new_graph)
+    # print(f"Replaced {counter} duplicates")
+    return unique_graphs
 
 
 # ===== FITNESS EVALUATION =====
@@ -216,17 +244,18 @@ def graph_to_matrix(graph, grid_size=(5, 5)):
         node, (r, c) = queue.popleft()
 
         # Iterate over node's successors (maintaining adjacency structure)
-        for direction, neighbor in zip(directions, graph.successors(node)):
-            new_r, new_c = r + direction[0], c + direction[1]
-
-            # Ensure valid placement in the grid
-            if (
-                    0 <= new_r < rows and 0 <= new_c < cols and
-                    grid[new_r, new_c] == 0 and neighbor not in visited
-            ):
-                grid[new_r, new_c] = graph.nodes[neighbor]['type']  # Assign block type
-                visited.add(neighbor)
-                queue.append((neighbor, (new_r, new_c)))  # Continue BFS
+        for neighbor in graph.successors(node):
+            if neighbor in visited:
+                continue
+            # look for any empty neighbor cell
+            for dr, dc in directions:
+                rr, cc = r + dr, c + dc
+                if (0 <= rr < rows and 0 <= cc < cols
+                        and grid[rr, cc] == 0):
+                    grid[rr, cc] = graph.nodes[neighbor]['type']
+                    visited.add(neighbor)
+                    queue.append((neighbor, (rr, cc)))
+                    break
 
     # Compute full connectivity for Evogym
     connectivity = evogym.get_full_connectivity(grid)
@@ -338,6 +367,7 @@ def evolutionary_algorithm():
     avg_rewards = np.full(NUM_GENERATIONS, np.nan)
     with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
         for generation in range(NUM_GENERATIONS):
+            population = remove_duplicates_and_replace(population)
             # Parallel fitness evaluation
             fitnesses, rewards = \
                 filter_results(list(executor.map(evaluate_structure_fitness, population)))
@@ -350,7 +380,7 @@ def evolutionary_algorithm():
             best_structures[generation] = graph_to_matrix(population[current_best_fitness_idx])[0]
             best_rewards[generation] = rewards[current_best_reward_idx]
 
-            print(graph_to_matrix(population[current_best_fitness_idx]))
+            # print(graph_to_matrix(population[current_best_fitness_idx]))
 
             # Track average
             avg_fitness[generation] = np.nanmean(fitnesses)
@@ -374,28 +404,20 @@ def evolutionary_algorithm():
 
             # Elitism
             elites = elitism(population, fitnesses, ELITISM_SIZE)
-            print(elites[-1])
-            # Survivor Selection (Elites + Offspring)
-            combined = elites + offspring
-            combined = combined[:POPULATION_SIZE]
+            elites.extend(offspring)
 
-            # Parallel fitness for combined
-            combined_fitnesses, combined_rewards \
-                = filter_results(list(executor.map(evaluate_structure_fitness, combined)))
+            # Clear and replace last population
+            population.clear()
+            del population
+            population = elites[:POPULATION_SIZE]
 
-            # Take top individuals
-            sorted_indices = np.argsort(combined_fitnesses)[::-1]
-            population = [combined[i] for i in sorted_indices[:POPULATION_SIZE]]
-
-            print(f"Gen {generation + 1}: Best Fitness = {best_fitnesses[generation]:.2f}, "
-                  f"Its Reward = {best_rewards[generation]:.2f}")
-            print(f"Gen {generation + 1}: {count_duplicate_digraphs(population)} duplicates")
+            # print(f"Gen {generation + 1}: Best Fitness = {best_fitnesses[generation]:.2f}, "
+            #       f"Its Reward = {best_rewards[generation]:.2f}")
 
     return best_structures, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
 
 def save_to_csv(data_csv):
-
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
 
@@ -407,8 +429,8 @@ def save_to_csv(data_csv):
 # ===== RUN AND VISUALIZE =====
 if __name__ == "__main__":
     for iteration in range(BATCH_SIZE):
-        print(f"===== Iteration {iteration} =====")
         best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm()
+        print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
         data = {

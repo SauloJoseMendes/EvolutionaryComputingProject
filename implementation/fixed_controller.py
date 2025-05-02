@@ -12,16 +12,19 @@ import pandas as pd
 
 from implementation.MutationHandler import MutationHandler
 
-# ===== PARAMETERS =====
+# ===== GP PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 200
-POPULATION_SIZE = 200
-STEPS = 500
-SCENARIO = 'Walker-v0'
-CONTROLLER_TYPE = 'alternating_gait'  # Options: 'alternating_gait', 'sinusoidal_wave', 'hopping_motion'
+NUM_GENERATIONS = 50
+POPULATION_SIZE = 50
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
-SEED = 42
+
+# ===== EVOGYM PARAMETERS =====
+TESTING = False
+STEPS = 500
+SCENARIOS = ['Walker-v0', 'BridgeWalker-v0']
+CONTROLLERS = ['alternating_gait', 'sinusoidal_wave', 'hopping_motion']
+SEEDS = [42, 0, 123, 987, 314159, 271828, -1, 2 ** 32 - 1]
 
 
 # ===== STRUCTURE REPRESENTATION =====
@@ -192,7 +195,7 @@ def remove_duplicates_and_replace(
         if not is_duplicate:
             unique_graphs.append(graph)
         else:
-            counter+=1
+            counter += 1
             new_graph = generate_fully_connected_graph(grid_size)
             new_graph = enforce_max_nodes(new_graph, max_nodes)
 
@@ -277,21 +280,21 @@ def filter_results(results: List):
     return fitness_list, reward_list
 
 
-def evaluate_structure_fitness(robot_graph: nx.DiGraph, view=False):
+def evaluate_structure_fitness(robot_graph: nx.DiGraph, controller_type, scenario, view=False):
     structure, connectivity = graph_to_matrix(robot_graph)
     if (evogym.is_connected(structure) is False or
             connectivity.shape[1] == 0 or
             evogym.has_actuator(structure) is False):
         return np.nan
     try:
-        env = gym.make('Walker-v0', max_episode_steps=STEPS, body=structure, connections=connectivity)
+        env = gym.make(scenario, max_episode_steps=STEPS, body=structure, connections=connectivity)
         env.reset()
         current_sim = env.sim
         current_viewer = evogym.EvoViewer(current_sim)
         current_viewer.track_objects(('robot',))
         action_size = current_sim.get_dim_action_space('robot')
         t, t_reward, final_pos, average_speed = 0, 0, 0, 0
-        controller = Controller(controller_type=CONTROLLER_TYPE, action_size=action_size)
+        controller = Controller(controller_type=controller_type, action_size=action_size)
         initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
         for t in range(STEPS):
             if view:
@@ -353,11 +356,11 @@ def count_duplicate_digraphs(graph_list):
 
 
 # ===== EVOLUTIONARY ALGORITHM =====
-def evolutionary_algorithm():
+def evolutionary_algorithm(seed, controller, scenario):
     """Main EA loop with modular operators (parallelized fitness evaluation)."""
-    np.random.seed(SEED)
-    random.seed(SEED)
-    torch.manual_seed(SEED)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
     population = [generate_fully_connected_graph() for _ in range(POPULATION_SIZE)]
     best_structures = np.empty((NUM_GENERATIONS, 5, 5))
     best_fitnesses = np.empty(NUM_GENERATIONS)
@@ -369,8 +372,10 @@ def evolutionary_algorithm():
         for generation in range(NUM_GENERATIONS):
             population = remove_duplicates_and_replace(population)
             # Parallel fitness evaluation
-            fitnesses, rewards = \
-                filter_results(list(executor.map(evaluate_structure_fitness, population)))
+            fitnesses, rewards = filter_results(list(
+                executor.map(lambda x: evaluate_structure_fitness(x, controller, scenario),
+                             population)
+            ))
 
             # Track best individual
             current_best_fitness_idx = np.argmax(fitnesses)
@@ -417,19 +422,25 @@ def evolutionary_algorithm():
     return best_structures, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
 
-def save_to_csv(data_csv):
+def save_to_csv(data_csv, seed, controller, scenario, testing):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-
-    filename = f"./data/fixed_controller/{SCENARIO}/" + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
+    if testing:
+        path = f"./testing/fixed_controller/{seed}/{controller}/{scenario}"
+    else:
+        path = f"./data/fixed_controller/{seed}/{controller}/{scenario}"
+    # Create all intermediate directories if they don't exist
+    os.makedirs(path, exist_ok=True)
+    filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
     # Save to CSV
     df.to_csv(filename, index=False)
 
 
-# ===== RUN AND VISUALIZE =====
-if __name__ == "__main__":
+def run(seed, controller, scenario, testing=False):
     for iteration in range(BATCH_SIZE):
-        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm()
+        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm(seed,
+                                                                                                        controller,
+                                                                                                        scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
@@ -440,8 +451,20 @@ if __name__ == "__main__":
             "Best Reward": best_rewards,
             "Best Structure": [",".join(map(str, mat.flatten())) for mat in best_structures],
         }
-        save_to_csv(data)
+        save_to_csv(data, seed, controller, scenario, testing)
         # Visualize the best structure
         # print("Visualizing the best robot...")
         # evaluate_structure_fitness(best_structures[-1], view=True)
         print("============================")
+
+
+def test_seeds():
+    for seed in SEEDS:
+        for scenario in SCENARIOS:
+            for controller in CONTROLLERS:
+                run(seed, scenario, controller, testing=True)
+
+
+# ===== RUN AND VISUALIZE =====
+if __name__ == "__main__":
+    test_seeds()

@@ -1,5 +1,6 @@
 import copy
 from collections import deque
+from functools import partial
 import torch
 import networkx as nx
 import evogym
@@ -14,8 +15,8 @@ from implementation.MutationHandler import MutationHandler
 
 # ===== GP PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 50
-POPULATION_SIZE = 50
+NUM_GENERATIONS = 10
+POPULATION_SIZE = 10
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -372,10 +373,12 @@ def evolutionary_algorithm(seed, controller, scenario):
         for generation in range(NUM_GENERATIONS):
             population = remove_duplicates_and_replace(population)
             # Parallel fitness evaluation
-            fitnesses, rewards = filter_results(list(
-                executor.map(lambda x: evaluate_structure_fitness(x, controller, scenario),
-                             population)
-            ))
+            evaluator = partial(evaluate_structure_fitness,
+                                controller_type=controller,
+                                scenario=scenario,
+                                view=False)
+
+            fitnesses, rewards = filter_results(list(executor.map(evaluator, population)))
 
             # Track best individual
             current_best_fitness_idx = np.argmax(fitnesses)
@@ -426,9 +429,9 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
     if testing:
-        path = f"./testing/fixed_controller/{seed}/{controller}/{scenario}"
+        path = f"./testing/fixed_controller/{seed}/{controller}/{scenario}/"
     else:
-        path = f"./data/fixed_controller/{seed}/{controller}/{scenario}"
+        path = f"./data/fixed_controller/{seed}/{controller}/{scenario}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(path, exist_ok=True)
     filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -462,7 +465,7 @@ def test_seeds():
     for seed in SEEDS:
         for scenario in SCENARIOS:
             for controller in CONTROLLERS:
-                run(seed, scenario, controller, testing=True)
+                run(seed=seed, controller=controller, scenario=scenario, testing=True)
 
 
 # ===== RUN AND VISUALIZE =====

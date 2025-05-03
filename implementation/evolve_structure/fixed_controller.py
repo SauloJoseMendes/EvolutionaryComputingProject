@@ -461,7 +461,7 @@ def run(seed, controller, scenario, testing=False):
         print("============================")
 
 
-def test_seeds():
+def seeds_():
     for seed in [271828, 2 ** 32 - 1]:
         for scenario in SCENARIOS:
             for controller in CONTROLLERS:
@@ -470,4 +470,4 @@ def test_seeds():
 
 # ===== RUN AND VISUALIZE =====
 if __name__ == "__main__":
-    test_seeds()
+    seeds_()

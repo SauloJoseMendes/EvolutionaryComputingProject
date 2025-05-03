@@ -11,12 +11,12 @@ import numpy as np
 import random
 import pandas as pd
 
-from implementation.MutationHandler import MutationHandler
+from implementation.evolve_structure.MutationHandler import MutationHandler
 
 # ===== GP PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 10
-POPULATION_SIZE = 10
+NUM_GENERATIONS = 50
+POPULATION_SIZE = 50
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -25,7 +25,7 @@ TESTING = False
 STEPS = 500
 SCENARIOS = ['Walker-v0', 'BridgeWalker-v0']
 CONTROLLERS = ['alternating_gait', 'sinusoidal_wave', 'hopping_motion']
-SEEDS = [42, 0, 123, 987, 314159, 271828, -1, 2 ** 32 - 1]
+SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 
 # ===== STRUCTURE REPRESENTATION =====
@@ -462,7 +462,7 @@ def run(seed, controller, scenario, testing=False):
 
 
 def test_seeds():
-    for seed in SEEDS:
+    for seed in [271828, 2 ** 32 - 1]:
         for scenario in SCENARIOS:
             for controller in CONTROLLERS:
                 run(seed=seed, controller=controller, scenario=scenario, testing=True)

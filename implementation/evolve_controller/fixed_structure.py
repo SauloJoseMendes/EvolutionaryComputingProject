@@ -3,22 +3,25 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 import evogym
+import pandas as pd
 import torch
 from evogym.envs import *
 
 from example.neural_controller import NeuralController, initialize_weights, get_weights, set_weights
 import numpy as np
 
-from implementation.evolve_structure.fixed_controller import filter_results
+SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v1']
+CONTROLLERS = ['alternating_gait', 'sinusoidal_wave', 'hopping_motion']
+SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
-# Parameter
+# EA Parameters
+BATCH_SIZE = 1
+NUM_GENERATIONS = 10
+POPULATION_SIZE = 10
+MUTATION_RATE = 0.4
+ELITISM_SIZE = 2
 
-population_size = 20
-generations = 50
-input_size = 10
-output_size = 5
-
-
+# Evogym Parameter
 STEPS = 500
 robot = np.array([
     [1, 3, 1, 0, 0],
@@ -31,22 +34,35 @@ robot = np.array([
 connections = evogym.get_full_connectivity(robot)
 
 
-def create_population(size):
+def filter_results(results: List):
+    fitness_list = []
+    reward_list = []
+    for res in results:
+        if isinstance(res, tuple):
+            fitness, reward = res
+            fitness_list.append(fitness)
+            reward_list.append(reward)
+        else:
+            # print("Invalid fitness or reward")
+            fitness_list.append(0)
+            reward_list.append(0)
+    return fitness_list, reward_list
+
+
+# === EA Helper Functions ===
+
+
+def create_population(scenario):
+    env = gym.make(scenario, max_episode_steps=STEPS, body=robot, connections=connections)
+    input_size = env.observation_space.shape[0]
+    output_size = env.action_space.shape[0]
+    env.close()
     population = []
-    for _ in range(size):
+    for _ in range(POPULATION_SIZE):
         model = NeuralController(input_size, output_size)
         model.apply(initialize_weights)
         population.append(model)
     return population
-
-
-def crossover(parent1_weights, parent2_weights):
-    children_weights_ar = []
-    for w1, w2 in zip(parent1_weights, parent2_weights):
-        mask = np.random.rand(*w1.shape) < 0.5
-        child_w = np.where(mask, w1, w2)
-        children_weights_ar.append(child_w)
-    return children_weights_ar
 
 
 def mutate(weights, mutation_rate=0.1, mutation_strength=0.5):
@@ -75,8 +91,8 @@ def evaluate_controller_fitness(controller, scenario, view=False):
             state = state[0]
 
         current_sim = env.sim
-        viewer = evogym.EvoViewer(current_sim)
-        viewer.track_objects(('robot',))
+        current_viewer = evogym.EvoViewer(current_sim)
+        current_viewer.track_objects(('robot',))
 
         # 3. Record initial position
         initial_pos = current_sim.object_pos_at_time(
@@ -91,7 +107,7 @@ def evaluate_controller_fitness(controller, scenario, view=False):
 
         for t in range(STEPS):
             if view:
-                viewer.render('screen')
+                current_viewer.render('screen')
 
             # ── Here's the key part ──
             # Convert the observation to a torch tensor,
@@ -123,16 +139,15 @@ def evaluate_controller_fitness(controller, scenario, view=False):
         final_fitness = (distance * 5.0) + (avg_speed * 2.0)
 
         # 6. Clean up
-        viewer.close()
+        current_viewer.close()
         env.close()
 
         return final_fitness, total_reward
 
     except ValueError as error_fitness:
         print(f"Error during environment creation, discarding unusable controller: {error_fitness}")
-        return np.nan
+        return np.nan, np.nan
 
-# === EA Helper Functions ===
 
 def tournament_selection(population: List[NeuralController],
                          fitnesses: List[float],
@@ -169,64 +184,123 @@ def elitism(population: List[NeuralController],
 
 # === Main Evolutionary Algorithm ===
 
-def evolutionary_algorithm(seed: int,
-                           scenario: str,
-                           robot,
-                           connections,
-                           input_size: int,
-                           output_size: int,
-                           population_size: int,
-                           generations: int,
-                           STEPS: int = 1000) -> List[NeuralController]:
+def ea(seed: int,
+       scenario: str):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
     Returns the final population of controllers.
     """
+    # Data
+    best_weights = np.empty(NUM_GENERATIONS, dtype=object)
+    best_fitnesses = np.empty(NUM_GENERATIONS)
+    best_rewards = np.empty(NUM_GENERATIONS)
+
+    avg_fitness = np.full(NUM_GENERATIONS, np.nan)
+    avg_rewards = np.full(NUM_GENERATIONS, np.nan)
+
     # Reproducibility
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
 
     # Initialize population
-    population = []
-    for _ in range(population_size):
-        ctrl = NeuralController(input_size, output_size)
-        ctrl.apply(initialize_weights)
-        population.append(ctrl)
+    population = create_population(scenario)
 
-    for gen in range(generations):
-        # Parallel fitness evaluation
-        evaluator = partial(evaluate_controller_fitness,
-                            scenario=scenario,
-                            robot=robot,
-                            connections=connections,
-                            STEPS=STEPS,
-                            view=False)
-        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-            results = list(executor.map(evaluator, population))
-        fitnesses, _ = zip(*filter_results(results))
+    with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
+        for generation in range(NUM_GENERATIONS):
+            # Parallel fitness evaluation
+            evaluator = partial(evaluate_controller_fitness,
+                                scenario=scenario)
 
-        # Elitism: keep top 2
-        elites = elitism(population, list(fitnesses), num_elites=2)
+            fitnesses, rewards = filter_results(list(executor.map(evaluator, population)))
 
-        # Generate children until full size
-        children: List[NeuralController] = []
-        while len(children) < population_size - len(elites):
-            # Tournament select two parents
-            parents = tournament_selection(population,
-                                           list(fitnesses),
-                                           tournament_size=3,
-                                           num_winners=2)
-            # Crossover
-            child = crossover(parents[0], parents[1], crossover_rate=0.5)
-            # Mutation
-            w = get_weights(child)
-            w_mut = mutate(w)
-            set_weights(child, w_mut)
-            children.append(child)
+            # Track best individual
+            current_best_fitness_idx = np.argmax(fitnesses)
+            current_best_reward_idx = np.argmax(rewards)
 
-        # New population
-        population = elites + children
-        print(f"Generation {gen+1}/{generations} best fitness: {max(fitnesses):.3f}")
+            best_fitnesses[generation] = fitnesses[current_best_fitness_idx]
+            best_weights[generation] = get_weights(population[current_best_fitness_idx])
+            best_rewards[generation] = rewards[current_best_reward_idx]
 
-    return population
+            # print(graph_to_matrix(population[current_best_fitness_idx]))
+
+            # Track average
+            avg_fitness[generation] = np.nanmean(fitnesses)
+            avg_rewards[generation] = np.nanmean(rewards)
+
+            # Elitism: keep top 2
+            elites = elitism(population, list(fitnesses), num_elites=2)
+
+            # Generate children until full size
+            children: List[NeuralController] = []
+            while len(children) < POPULATION_SIZE - len(elites):
+                # Tournament select two parents
+                parents = tournament_selection(population,
+                                               list(fitnesses),
+                                               tournament_size=3,
+                                               num_winners=2)
+                # Crossover
+                child = crossover(parents[0], parents[1], crossover_rate=0.5)
+                # Mutation
+                w = get_weights(child)
+                w_mut = mutate(w)
+                set_weights(child, w_mut)
+                children.append(child)
+
+            # New population
+            population = elites + children
+            print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
+
+    return best_weights, best_fitnesses, best_rewards, avg_fitness, avg_rewards
+
+
+def save(data_csv, seed, scenario, testing):
+    best_weights = data_csv.pop("Best Weights")
+    # Create a DataFrame
+    df = pd.DataFrame(data_csv)
+    if testing:
+        run_path = f"./testing/runs/{seed}/{scenario}/"
+        weights_path = f"./testing/weights/{seed}/{scenario}/"
+    else:
+        run_path = f"./data/runs/{seed}/{scenario}/"
+        weights_path = f"./data/weights/{seed}/{scenario}/"
+    # Create all intermediate directories if they don't exist
+    os.makedirs(run_path, exist_ok=True)
+    run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
+    # Save to CSV
+    df.to_csv(run_filename, index=False)
+    # Save weights
+    os.makedirs(weights_path, exist_ok=True)
+    weights_filename = weights_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".pt"
+    torch.save(best_weights, weights_filename)
+
+
+def run(seed, scenario, testing=False):
+    for iteration in range(BATCH_SIZE):
+        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = ea(seed=seed,
+                                                                                    scenario=scenario)
+        print(f"===== Iteration {iteration} =====")
+        print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
+        print(f"Best Reward Achieved: {best_rewards[-1]}")
+        data = {
+            "Average Fitness": avg_fitness,
+            "Average Reward": avg_reward,
+            "Best Fitness": best_fitnesses,
+            "Best Reward": best_rewards,
+            "Best Weights": best_weights,
+        }
+        save(data, seed, scenario, testing)
+        # Visualize the best structure
+        # print("Visualizing the best robot...")
+        # evaluate_structure_fitness(best_structures[-1], view=True)
+        print("============================")
+
+
+def seeds_():
+    for seed in [271828, 2 ** 32 - 1]:
+        for scenario in SCENARIOS:
+            run(seed=seed, scenario=scenario, testing=True)
+
+
+if __name__ == '__main__':
+    seeds_()

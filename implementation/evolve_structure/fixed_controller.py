@@ -317,7 +317,7 @@ def evaluate_structure_fitness(robot_graph: nx.DiGraph, controller_type, scenari
         return final_fitness, t_reward
     except ValueError as error_fitness:
         print(f"Error during environment creation, discarding unusable structure: {error_fitness}")
-        return np.nan
+        return np.nan, np.nan
 
 
 def count_duplicate_digraphs(graph_list):

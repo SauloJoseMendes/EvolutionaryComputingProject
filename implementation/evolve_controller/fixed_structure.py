@@ -16,8 +16,8 @@ SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
 BATCH_SIZE = 1
-NUM_GENERATIONS = 10
-POPULATION_SIZE = 10
+NUM_GENERATIONS = 50
+POPULATION_SIZE = 50
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -65,11 +65,11 @@ def create_population(scenario):
     return population
 
 
-def mutate(weights, mutation_rate=0.1, mutation_strength=0.5):
+def mutate(weights, mutation_strength=0.5):
     new_weights = []
     for w in weights:
         noise = np.random.randn(*w.shape) * mutation_strength
-        mask = np.random.rand(*w.shape) < mutation_rate
+        mask = np.random.rand(*w.shape) < MUTATION_RATE
         new_w = w + noise * mask
         new_weights.append(new_w)
     return new_weights
@@ -249,7 +249,7 @@ def ea(seed: int,
 
             # New population
             population = elites + children
-            print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
+            # print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
 
     return best_weights, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
@@ -297,7 +297,7 @@ def run(seed, scenario, testing=False):
 
 
 def seeds_():
-    for seed in [271828, 2 ** 32 - 1]:
+    for seed in SEEDS:
         for scenario in SCENARIOS:
             run(seed=seed, scenario=scenario, testing=True)
 

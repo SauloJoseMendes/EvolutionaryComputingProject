@@ -15,8 +15,8 @@ from implementation.evolve_structure.MutationHandler import MutationHandler
 
 # ===== GP PARAMETERS =====
 BATCH_SIZE = 1
-NUM_GENERATIONS = 50
-POPULATION_SIZE = 50
+NUM_GENERATIONS = 250
+POPULATION_SIZE = 100
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -431,7 +431,7 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     if testing:
         path = f"./testing/fixed_controller/{seed}/{controller}/{scenario}/"
     else:
-        path = f"./data/fixed_controller/{seed}/{controller}/{scenario}/"
+        path = f"./data/fixed_controller/{controller}/{scenario}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(path, exist_ok=True)
     filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -472,4 +472,4 @@ def seeds_():
 if __name__ == "__main__":
     _SCENARIOS = ['BridgeWalker-v0', 'Walker-v0']
     for _scenario in _SCENARIOS:
-        run(batches=1, seed=271828, controller='alternating_gait', scenario=_scenario)
+        run(batches=5, seed=271828, controller='alternating_gait', scenario=_scenario)

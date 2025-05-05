@@ -1,5 +1,6 @@
 import copy
 from collections import deque
+from functools import partial
 from typing import TypedDict
 
 import torch
@@ -25,33 +26,27 @@ class EvolveStructure:
         best_structure: List[str]
 
     def __init__(self,
-                 population_size: int = 100,
-                 chromosome_length: int = 10,
-                 mutation_rate: float = 0.01,
-                 crossover_rate: float = 0.7,
+                 population_size: int = 10,
+                 mutation_rate: float = 0.4,
                  elitism_count: int = 2,
                  grid_size=(5, 5),
                  scenario: str = 'Walker-v0',
                  controller_type: str = 'alternating_gait',
                  steps: int = 500,
                  tournament_size: int = 2,
-                 seed: int = 42,
-                 num_generations: int = 150,
+                 seed: int = 271828,
+                 num_generations: int = 1,
                  testing: bool = False):
         """
         Initialize the evolutionary algorithm with parameters.
 
         Args:
             population_size: Number of individuals in the population
-            chromosome_length: Length of each individual's chromosome
             mutation_rate: Probability of mutation for each gene
-            crossover_rate: Probability of crossover between parents
             elitism_count: Number of top individuals to carry over unchanged
         """
         self.population_size = population_size
-        self.chromosome_length = chromosome_length
         self.mutation_rate = mutation_rate
-        self.crossover_rate = crossover_rate
         self.elitism_count = elitism_count
         self.grid_size = grid_size
         self.scenario = scenario
@@ -64,6 +59,8 @@ class EvolveStructure:
         self.initialize_population()
         self.result = None
         self.testing = testing
+
+        self.initialize_population()
 
     # ===== AUXILIARY FUNCTIONS =====
     @staticmethod
@@ -183,11 +180,11 @@ class EvolveStructure:
             raise ValueError("Result not available yet")
 
         result_to_dict = {
-            "Average Fitness": self.result.average_fitness,
-            "Average Reward": self.result.average_reward,
-            "Best Fitness": self.result.best_fitness,
-            "Best Reward": self.result.best_reward,
-            "Best Structure": self.result.best_structure,
+            "Average Fitness": self.result["average_fitness"],
+            "Average Reward": self.result["average_reward"],
+            "Best Fitness": self.result["best_fitness"],
+            "Best Reward": self.result["best_reward"],
+            "Best Structure": self.result["best_structure"]
         }
 
         # Create dataframe
@@ -197,7 +194,7 @@ class EvolveStructure:
         if self.testing:
             path = f"./testing/fixed_controller/{self.seed}/{self.controller_type}/{self.scenario}/"
         else:
-            path = f"./data/fixed_controller/{self.seed}/{self.controller_type}/{self.scenario}/"
+            path = f"./data/fixed_controller/{self.controller_type}/{self.scenario}/"
 
         # Create all intermediate directories if they don't exist
         os.makedirs(path, exist_ok=True)
@@ -225,7 +222,7 @@ class EvolveStructure:
 
         self.population = population
 
-    def evaluate_fitness(self, individual: nx.DiGraph, view: bool = True) -> Tuple[float, float]:
+    def evaluate_fitness(self, individual: nx.DiGraph, view: bool = False) -> Tuple[float, float]:
         """
         Mock fitness function - evaluates how good an individual is.
         In a real implementation, this would be your problem-specific function.
@@ -242,6 +239,7 @@ class EvolveStructure:
         if (evogym.is_connected(structure) is False or
                 connectivity.shape[1] == 0 or
                 evogym.has_actuator(structure) is False):
+            print("ola")
             return np.nan, np.nan
         try:
             env = gym.make(self.scenario, max_episode_steps=self.steps, body=structure, connections=connectivity)
@@ -397,7 +395,6 @@ class EvolveStructure:
         """
         Run the evolutionary algorithm for a given number of generations.
         """
-
         # Update Randomness
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -418,18 +415,27 @@ class EvolveStructure:
                 # Evaluate fitness with parallelism
                 results = list(executor.map(self.evaluate_fitness, self.population))
                 fitness_scores, rewards = zip(*results)
+                fitness_scores = list(fitness_scores)
+                rewards = list(rewards)
 
-                # Track best individual
-                current_best_fitness_idx = np.argmax(fitness_scores)
-                current_best_reward_idx = np.argmax(rewards)
+                try:
+                    # Track best individual
+                    current_best_fitness_idx = np.nanargmax(fitness_scores)
+                    current_best_reward_idx = np.nanargmax(rewards)
+                    fitness_scores[generation] = fitness_scores[current_best_fitness_idx]
+                    best_structures[generation] = self.graph_to_matrix(self.population[current_best_fitness_idx])[0]
+                    best_rewards[generation] = rewards[current_best_reward_idx]
+                    # Track average
+                    avg_fitness[generation] = np.nanmean(fitness_scores)
+                    avg_rewards[generation] = np.nanmean(rewards)
+                except ValueError:
+                    fitness_scores[generation] = 0
+                    best_structures[generation] = 0
+                    best_rewards[generation] = 0
+                    avg_fitness[generation] = 0
+                    avg_rewards[generation] = 0
 
-                best_fitness_scores[generation] = fitness_scores[current_best_fitness_idx]
-                best_structures[generation] = self.graph_to_matrix(self.population[current_best_fitness_idx])[0]
-                best_rewards[generation] = rewards[current_best_reward_idx]
 
-                # Track average
-                avg_fitness[generation] = np.nanmean(fitness_scores)
-                avg_rewards[generation] = np.nanmean(rewards)
 
                 # Selection
                 parents = self.select_parents(fitness_scores)
@@ -491,7 +497,7 @@ def run(batches, seed, controller, scenario, testing=False, view=False):
 
 
 def seeds_():
-    SCENARIOS = ['Walker-v0', 'BridgeWalker-v0']
+    SCENARIOS = ['BridgeWalker-v0', 'Walker-v0']
     CONTROLLERS = ['alternating_gait', 'sinusoidal_wave', 'hopping_motion']
     SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
     for seed in SEEDS:
@@ -501,4 +507,6 @@ def seeds_():
 
 
 if __name__ == "__main__":
-    seeds_()
+    _SCENARIOS = ['BridgeWalker-v0', 'Walker-v0']
+    for _scenario in _SCENARIOS:
+        run(batches=5, seed=271828, controller='alternating_gait', scenario=_scenario)

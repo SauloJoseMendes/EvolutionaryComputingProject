@@ -239,7 +239,6 @@ class EvolveStructure:
         if (evogym.is_connected(structure) is False or
                 connectivity.shape[1] == 0 or
                 evogym.has_actuator(structure) is False):
-            print("ola")
             return np.nan, np.nan
         try:
             env = gym.make(self.scenario, max_episode_steps=self.steps, body=structure, connections=connectivity)
@@ -393,8 +392,27 @@ class EvolveStructure:
 
     def evolve(self, show_progress=False):
         """
-        Run the evolutionary algorithm for a given number of generations.
+            Run the evolutionary algorithm for a given number of generations.
         """
+
+        def track_best():
+            try:
+                # Track best individual
+                current_best_fitness_idx = np.nanargmax(fitness_scores)
+                current_best_reward_idx = np.nanargmax(rewards)
+                fitness_scores[generation] = fitness_scores[current_best_fitness_idx]
+                best_structures[generation] = self.graph_to_matrix(self.population[current_best_fitness_idx])[0]
+                best_rewards[generation] = rewards[current_best_reward_idx]
+                # Track average
+                avg_fitness[generation] = np.nanmean(fitness_scores)
+                avg_rewards[generation] = np.nanmean(rewards)
+            except ValueError:
+                fitness_scores[generation] = 0
+                best_structures[generation] = 0
+                best_rewards[generation] = 0
+                avg_fitness[generation] = 0
+                avg_rewards[generation] = 0
+
         # Update Randomness
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -413,29 +431,14 @@ class EvolveStructure:
                 self.remove_duplicates()
 
                 # Evaluate fitness with parallelism
-                results = list(executor.map(self.evaluate_fitness, self.population))
+                evaluation_func = partial(EvolveStructure.evaluate_fitness, self)
+                results = list(executor.map(evaluation_func, self.population))
                 fitness_scores, rewards = zip(*results)
                 fitness_scores = list(fitness_scores)
                 rewards = list(rewards)
 
-                try:
-                    # Track best individual
-                    current_best_fitness_idx = np.nanargmax(fitness_scores)
-                    current_best_reward_idx = np.nanargmax(rewards)
-                    fitness_scores[generation] = fitness_scores[current_best_fitness_idx]
-                    best_structures[generation] = self.graph_to_matrix(self.population[current_best_fitness_idx])[0]
-                    best_rewards[generation] = rewards[current_best_reward_idx]
-                    # Track average
-                    avg_fitness[generation] = np.nanmean(fitness_scores)
-                    avg_rewards[generation] = np.nanmean(rewards)
-                except ValueError:
-                    fitness_scores[generation] = 0
-                    best_structures[generation] = 0
-                    best_rewards[generation] = 0
-                    avg_fitness[generation] = 0
-                    avg_rewards[generation] = 0
-
-
+                # Track results
+                track_best()
 
                 # Selection
                 parents = self.select_parents(fitness_scores)

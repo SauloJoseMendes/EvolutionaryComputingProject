@@ -17,6 +17,12 @@ import pandas as pd
 from implementation.evolve_structure.MutationHandler import MutationHandler
 
 
+def evaluate_fitness_wrapper(args):
+    individual, controller_type, scenario, steps = args
+    return EvolveStructure.evaluate_fitness(
+        individual, controller_type, scenario, steps, view=False
+    )
+
 class EvolveStructure:
     class Result(TypedDict):
         average_fitness: np.ndarray
@@ -26,7 +32,7 @@ class EvolveStructure:
         best_structure: List[str]
 
     def __init__(self,
-                 population_size: int = 10,
+                 population_size: int = 100,
                  mutation_rate: float = 0.4,
                  elitism_count: int = 2,
                  grid_size=(5, 5),
@@ -35,7 +41,7 @@ class EvolveStructure:
                  steps: int = 500,
                  tournament_size: int = 2,
                  seed: int = 271828,
-                 num_generations: int = 1,
+                 num_generations: int = 250,
                  testing: bool = False):
         """
         Initialize the evolutionary algorithm with parameters.
@@ -76,7 +82,8 @@ class EvolveStructure:
 
         return individual
 
-    def graph_to_matrix(self, individual: nx.DiGraph) -> Tuple[np.ndarray, np.ndarray]:
+    @staticmethod
+    def graph_to_matrix(individual: nx.DiGraph, grid_size=(5, 5)) -> Tuple[np.ndarray, np.ndarray]:
         """
         Converts a directed graph into a 5x5 matrix representation using BFS-based placement.
         Ensures that:
@@ -89,11 +96,12 @@ class EvolveStructure:
 
         Returns:
             tuple: A 5x5 numpy array representing the structure and its connectivity.
+            :param grid_size:
         """
         # Remove disconnected nodes
         individual = MutationHandler.garbage_collect_nodes(individual)
 
-        rows, cols = self.grid_size
+        rows, cols = grid_size
         grid = np.zeros((rows, cols), dtype=int)
         visited = set()
 
@@ -127,9 +135,9 @@ class EvolveStructure:
         connectivity = evogym.get_full_connectivity(grid)
         return np.array(grid), connectivity
 
-    def generate_graph(self) -> nx.DiGraph:
-        rows, _ = self.grid_size
-        num_nodes = random.randint(3, 15)
+    def generate_graph(self, grid_size=(5, 5)) -> nx.DiGraph:
+        rows, _ = grid_size
+        num_nodes = random.randint(3, 15)  # Generate a small number of nodes
         graph = nx.DiGraph()
         # Add nodes
         for i in range(num_nodes):
@@ -149,7 +157,7 @@ class EvolveStructure:
                 graph.add_edge(source_node, target_node)
                 connected_component.add(target_node)
                 remaining_nodes.remove(target_node)
-        return graph
+        return self.enforce_max_nodes(graph)
 
     def remove_duplicates(self, max_nodes: int = 25):
         unique_graphs = []
@@ -222,7 +230,12 @@ class EvolveStructure:
 
         self.population = population
 
-    def evaluate_fitness(self, individual: nx.DiGraph, view: bool = False) -> Tuple[float, float]:
+    @staticmethod
+    def evaluate_fitness(individual: nx.DiGraph,
+                         controller_type: str,
+                         scenario: str,
+                         steps: int = 500,
+                         view=False) -> Tuple[float, float]:
         """
         Mock fitness function - evaluates how good an individual is.
         In a real implementation, this would be your problem-specific function.
@@ -235,22 +248,22 @@ class EvolveStructure:
             :param individual:
             :param view:
         """
-        structure, connectivity = self.graph_to_matrix(individual)
+        structure, connectivity = EvolveStructure.graph_to_matrix(individual)
         if (evogym.is_connected(structure) is False or
                 connectivity.shape[1] == 0 or
                 evogym.has_actuator(structure) is False):
             return np.nan, np.nan
         try:
-            env = gym.make(self.scenario, max_episode_steps=self.steps, body=structure, connections=connectivity)
+            env = gym.make(scenario, max_episode_steps=steps, body=structure, connections=connectivity)
             env.reset()
             current_sim = env.sim
             current_viewer = evogym.EvoViewer(current_sim)
             current_viewer.track_objects(('robot',))
             action_size = current_sim.get_dim_action_space('robot')
             t, t_reward, final_pos, average_speed = 0, 0, 0, 0
-            controller = Controller(controller_type=self.controller_type, action_size=action_size)
+            controller = Controller(controller_type=controller_type, action_size=action_size)
             initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
-            for t in range(self.steps):
+            for t in range(steps):
                 if view:
                     current_viewer.render('screen')
                 action = controller.run(t)
@@ -353,7 +366,8 @@ class EvolveStructure:
         of the five possible mutation techniques (defined in MutationHandler) to apply.
 
         Parameters:
-          individual (nx.DiGraph): The directed graph representing the robot.
+          robot_graph (nx.DiGraph): The directed graph representing the robot.
+          mutation_rate (float): The base probability of mutation.
 
         Returns:
           nx.DiGraph: The mutated graph.
@@ -377,20 +391,22 @@ class EvolveStructure:
         num_to_apply = random.choice([1, 2])
         techniques_to_apply = random.sample(mutation_techniques, num_to_apply)
 
-        mutated_individual = individual.copy()
+        mutated_graph = individual.copy()
 
         for technique in techniques_to_apply:
-            mutated_individual = technique(mutated_individual)
+            mutated_graph = technique(mutated_graph)
 
-        mutated_individual = MutationHandler.garbage_collect_nodes(mutated_individual)
-        return self.enforce_max_nodes(mutated_individual)
+        mutated_graph = MutationHandler.garbage_collect_nodes(mutated_graph)
+        return self.enforce_max_nodes(mutated_graph)
 
     def elitism(self, fitness_scores: List[float]) -> List[nx.DiGraph]:
         """Preserves the top `elite_size` individuals."""
         elite_indices = np.argsort(fitness_scores)[-self.elitism_count:]
         return [copy.deepcopy(self.population[i]) for i in elite_indices]
 
-    def evolve(self, show_progress=False):
+
+
+    def evolve(self, show_progress=True):
         """
             Run the evolutionary algorithm for a given number of generations.
         """
@@ -428,11 +444,16 @@ class EvolveStructure:
         with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
             for generation in range(self.num_generations):
                 # Remove and Replace duplicates in population
+                print(self.graph_to_matrix(self.population[0])[0])
                 self.remove_duplicates()
-
+                print(self.graph_to_matrix(self.population[0])[0])
                 # Evaluate fitness with parallelism
-                evaluation_func = partial(EvolveStructure.evaluate_fitness, self)
-                results = list(executor.map(evaluation_func, self.population))
+                args_list = [
+                    (ind, self.controller_type, self.scenario, self.steps)
+                    for ind in self.population
+                ]
+                results = list(executor.map(evaluate_fitness_wrapper, args_list))
+
                 fitness_scores, rewards = zip(*results)
                 fitness_scores = list(fitness_scores)
                 rewards = list(rewards)

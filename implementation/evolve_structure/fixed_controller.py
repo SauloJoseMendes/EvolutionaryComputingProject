@@ -357,7 +357,7 @@ def count_duplicate_digraphs(graph_list):
 
 
 # ===== EVOLUTIONARY ALGORITHM =====
-def evolutionary_algorithm(seed, controller, scenario):
+def evolutionary_algorithm(seed, controller, scenario, debug=True):
     """Main EA loop with modular operators (parallelized fitness evaluation)."""
     np.random.seed(seed)
     random.seed(seed)
@@ -418,9 +418,9 @@ def evolutionary_algorithm(seed, controller, scenario):
             population.clear()
             del population
             population = elites[:POPULATION_SIZE]
-
-            # print(f"Gen {generation + 1}: Best Fitness = {best_fitnesses[generation]:.2f}, "
-            #       f"Its Reward = {best_rewards[generation]:.2f}")
+            if debug:
+                print(f"Gen {generation + 1}: Best Fitness = {best_fitnesses[generation]:.2f}, "
+                      f"Its Reward = {best_rewards[generation]:.2f}")
 
     return best_structures, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
@@ -439,8 +439,8 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     df.to_csv(filename, index=False)
 
 
-def run(seed, controller, scenario, testing=False):
-    for iteration in range(BATCH_SIZE):
+def run(batches, seed, controller, scenario, testing=False):
+    for iteration in range(batches):
         best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm(seed,
                                                                                                         controller,
                                                                                                         scenario)
@@ -470,4 +470,6 @@ def seeds_():
 
 # ===== RUN AND VISUALIZE =====
 if __name__ == "__main__":
-    seeds_()
+    _SCENARIOS = ['BridgeWalker-v0', 'Walker-v0']
+    for _scenario in _SCENARIOS:
+        run(batches=1, seed=271828, controller='alternating_gait', scenario=_scenario)

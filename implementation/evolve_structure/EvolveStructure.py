@@ -1,27 +1,20 @@
 import copy
+import random
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from typing import TypedDict
 
-import torch
-import networkx as nx
 import evogym
+import networkx as nx
+import numpy as np
+import pandas as pd
+import torch
 from evogym.envs import *
-from concurrent.futures import ProcessPoolExecutor
 
 from Controller import Controller
-import numpy as np
-import random
-import pandas as pd
-
 from implementation.evolve_structure.MutationHandler import MutationHandler
 
-
-def evaluate_fitness_wrapper(args):
-    individual, controller_type, scenario, steps = args
-    return EvolveStructure.evaluate_fitness(
-        individual, controller_type, scenario, steps, view=False
-    )
 
 class EvolveStructure:
     class Result(TypedDict):
@@ -230,61 +223,6 @@ class EvolveStructure:
 
         self.population = population
 
-    @staticmethod
-    def evaluate_fitness(individual: nx.DiGraph,
-                         controller_type: str,
-                         scenario: str,
-                         steps: int = 500,
-                         view=False) -> Tuple[float, float]:
-        """
-        Mock fitness function - evaluates how good an individual is.
-        In a real implementation, this would be your problem-specific function.
-
-        Args:
-            individual: The structure to evaluate
-
-        Returns:
-            Fitness score (higher is better)
-            :param individual:
-            :param view:
-        """
-        structure, connectivity = EvolveStructure.graph_to_matrix(individual)
-        if (evogym.is_connected(structure) is False or
-                connectivity.shape[1] == 0 or
-                evogym.has_actuator(structure) is False):
-            return np.nan, np.nan
-        try:
-            env = gym.make(scenario, max_episode_steps=steps, body=structure, connections=connectivity)
-            env.reset()
-            current_sim = env.sim
-            current_viewer = evogym.EvoViewer(current_sim)
-            current_viewer.track_objects(('robot',))
-            action_size = current_sim.get_dim_action_space('robot')
-            t, t_reward, final_pos, average_speed = 0, 0, 0, 0
-            controller = Controller(controller_type=controller_type, action_size=action_size)
-            initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
-            for t in range(steps):
-                if view:
-                    current_viewer.render('screen')
-                action = controller.run(t)
-                state, reward, terminated, truncated, info = env.step(action)
-                t_reward += reward
-                average_speed += current_sim.object_vel_at_time(current_sim.get_time(), 'robot').mean()
-                if terminated or truncated:
-                    final_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
-                    env.reset()
-                    break
-            distance = final_pos - initial_pos
-            if t != 0:
-                average_speed /= t
-            final_fitness = (distance * 5) + average_speed * 2
-            current_viewer.close()
-            env.close()
-            return final_fitness, t_reward
-        except ValueError as error_fitness:
-            print(f"Error during environment creation, discarding unusable structure: {error_fitness}")
-            return np.nan, np.nan
-
     def select_parents(self, fitness_scores: List[float]) -> List[nx.DiGraph]:
         """
         Select parents for reproduction using tournament selection.
@@ -298,7 +236,7 @@ class EvolveStructure:
         selected = []
         for _ in range(len(self.population)):
             candidates = np.random.choice(len(self.population), size=self.tournament_size, replace=False)
-            winner = candidates[np.argmax([fitness_scores[c] for c in candidates])]
+            winner = candidates[np.nanargmax([fitness_scores[c] for c in candidates])]
             selected.append(copy.deepcopy(self.population[winner]))
         return selected
 
@@ -366,8 +304,7 @@ class EvolveStructure:
         of the five possible mutation techniques (defined in MutationHandler) to apply.
 
         Parameters:
-          robot_graph (nx.DiGraph): The directed graph representing the robot.
-          mutation_rate (float): The base probability of mutation.
+          individual (nx.DiGraph): The directed graph representing the robot.
 
         Returns:
           nx.DiGraph: The mutated graph.
@@ -404,13 +341,10 @@ class EvolveStructure:
         elite_indices = np.argsort(fitness_scores)[-self.elitism_count:]
         return [copy.deepcopy(self.population[i]) for i in elite_indices]
 
-
-
-    def evolve(self, show_progress=True):
+    def evolve(self, eval_func, show_progress=True):
         """
             Run the evolutionary algorithm for a given number of generations.
         """
-
         def track_best():
             try:
                 # Track best individual
@@ -444,15 +378,14 @@ class EvolveStructure:
         with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
             for generation in range(self.num_generations):
                 # Remove and Replace duplicates in population
-                print(self.graph_to_matrix(self.population[0])[0])
-                self.remove_duplicates()
-                print(self.graph_to_matrix(self.population[0])[0])
+                # self.remove_duplicates()
                 # Evaluate fitness with parallelism
-                args_list = [
-                    (ind, self.controller_type, self.scenario, self.steps)
-                    for ind in self.population
-                ]
-                results = list(executor.map(evaluate_fitness_wrapper, args_list))
+                pop_param = copy.deepcopy(self.population)
+                evaluator = partial(eval_func,
+                                    controller_type=copy.deepcopy(self.controller_type),
+                                    scenario=copy.deepcopy(self.scenario),
+                                    view=False)
+                results = list(executor.map(evaluator, pop_param))
 
                 fitness_scores, rewards = zip(*results)
                 fitness_scores = list(fitness_scores)
@@ -499,10 +432,68 @@ class EvolveStructure:
         self.result = data
 
 
+def evaluate_fitness(individual: nx.DiGraph,
+                     controller_type: str,
+                     scenario: str,
+                     steps: int = 500,
+                     view=False) -> Tuple[float, float]:
+    """
+    Mock fitness function - evaluates how good an individual is.
+    In a real implementation, this would be your problem-specific function.
+
+    Args:
+        individual: The structure to evaluate
+
+    Returns:
+        Fitness score (higher is better)
+        :param controller_type:
+        :param steps:
+        :param scenario:
+        :param individual:
+        :param view:
+    """
+    structure, connectivity = EvolveStructure.graph_to_matrix(individual)
+    if (evogym.is_connected(structure) is False or
+            connectivity.shape[1] == 0 or
+            evogym.has_actuator(structure) is False):
+        return np.nan, np.nan
+    try:
+        env = gym.make(scenario, max_episode_steps=steps, body=structure, connections=connectivity)
+        env.reset()
+        current_sim = env.sim
+        current_viewer = evogym.EvoViewer(current_sim)
+        current_viewer.track_objects(('robot',))
+        action_size = current_sim.get_dim_action_space('robot')
+        t, t_reward, final_pos, average_speed = 0, 0, 0, 0
+        controller = Controller(controller_type=controller_type, action_size=action_size)
+        initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
+        for t in range(steps):
+            if view:
+                current_viewer.render('screen')
+            action = controller.run(t)
+            state, reward, terminated, truncated, info = env.step(action)
+            t_reward += reward
+            average_speed += current_sim.object_vel_at_time(current_sim.get_time(), 'robot').mean()
+            if terminated or truncated:
+                final_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
+                env.reset()
+                break
+        distance = final_pos - initial_pos
+        if t != 0:
+            average_speed /= t
+        final_fitness = (distance * 5) + average_speed * 2
+        current_viewer.close()
+        env.close()
+        return final_fitness, t_reward
+    except ValueError as error_fitness:
+        print(f"Error during environment creation, discarding unusable structure: {error_fitness}")
+        return np.nan, np.nan
+
+
 def run(batches, seed, controller, scenario, testing=False, view=False):
     for iteration in range(batches):
         EA = EvolveStructure(seed=seed, controller_type=controller, scenario=scenario, testing=testing)
-        EA.evolve()
+        EA.evolve(evaluate_fitness)
         result = EA.get_result()
 
         print(f"===== Iteration {iteration} =====")

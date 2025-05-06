@@ -7,17 +7,16 @@ import pandas as pd
 import torch
 from evogym.envs import *
 
-from example.neural_controller import NeuralController, initialize_weights, get_weights, set_weights
+from implementation.evolve_controller.neural_controller import NeuralController, initialize_weights, get_weights, set_weights
 import numpy as np
 
-SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v1']
-CONTROLLERS = ['alternating_gait', 'sinusoidal_wave', 'hopping_motion']
+SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0']
 SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
 BATCH_SIZE = 1
-NUM_GENERATIONS = 50
-POPULATION_SIZE = 50
+NUM_GENERATIONS = 250
+POPULATION_SIZE = 100
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -275,8 +274,8 @@ def save(data_csv, seed, scenario, testing):
     torch.save(best_weights, weights_filename)
 
 
-def run(seed, scenario, testing=False):
-    for iteration in range(BATCH_SIZE):
+def run(seed, scenario, testing=False, batches=1):
+    for iteration in range(batches):
         best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = ea(seed=seed,
                                                                                     scenario=scenario)
         print(f"===== Iteration {iteration} =====")
@@ -303,4 +302,5 @@ def seeds_():
 
 
 if __name__ == '__main__':
-    seeds_()
+    for _scenario in SCENARIOS:
+        run(batches=5, seed=271828, scenario=_scenario)

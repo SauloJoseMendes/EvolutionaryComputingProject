@@ -1,9 +1,6 @@
-import numpy as np
-import random
-import gymnasium as gym
 from evogym.envs import *
 from evogym import EvoViewer, get_full_connectivity
-from neural_controller import *
+from implementation.evolve_controller.neural_controller import *
 
 
 NUM_GENERATIONS = 100  # Number of generations to evolve

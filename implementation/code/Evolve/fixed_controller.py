@@ -6,12 +6,12 @@ import networkx as nx
 import evogym
 from evogym.envs import *
 from concurrent.futures import ProcessPoolExecutor
-from Controller import Controller
+from AuxiliaryClasses import Controller
 import numpy as np
 import random
 import pandas as pd
 
-from implementation.evolve_structure.MutationHandler import MutationHandler
+from implementation.code.AuxiliaryClasses.MutationHandler import MutationHandler
 
 # ===== GP PARAMETERS =====
 BATCH_SIZE = 1
@@ -42,30 +42,19 @@ def enforce_max_nodes(graph: nx.DiGraph, max_nodes: int = 25) -> nx.DiGraph:
     return graph
 
 
-def generate_fully_connected_graph(grid_size=(5, 5)):
-    rows, _ = grid_size
-    num_nodes = random.randint(3, 15)  # Generate a small number of nodes
+def generate_fully_connected_graph():
+    num_nodes = random.randint(5, 15)
     graph = nx.DiGraph()
-    # Add nodes
+
     for i in range(num_nodes):
         graph.add_node(i, type=random.choice([1, 2, 3, 4]))
 
-    # Connect the nodes to form a connected component (e.g., a chain or a small tree)
-    nodes = list(graph.nodes())
-    if nodes:
-        start_node = random.choice(nodes)
-        remaining_nodes = set(nodes)
-        remaining_nodes.remove(start_node)
-        connected_component = {start_node}
+    for i in graph.nodes():
+        for j in graph.nodes():
+            if i != j:
+                graph.add_edge(i, j)
 
-        while remaining_nodes:
-            source_node = random.choice(list(connected_component))
-            target_node = random.choice(list(remaining_nodes))
-            graph.add_edge(source_node, target_node)
-            connected_component.add(target_node)
-            remaining_nodes.remove(target_node)
-
-    return enforce_max_nodes(graph)
+    return graph
 
 
 # ===== EVOLUTIONARY OPERATORS =====
@@ -186,7 +175,6 @@ def elitism(population, fitnesses, elite_size=2):
 
 def remove_duplicates_and_replace(
         graphs: List[nx.DiGraph],
-        grid_size=(5, 5),
         max_nodes: int = 25) -> List[nx.DiGraph]:
     unique_graphs = []
     counter = 0
@@ -197,13 +185,13 @@ def remove_duplicates_and_replace(
             unique_graphs.append(graph)
         else:
             counter += 1
-            new_graph = generate_fully_connected_graph(grid_size)
+            new_graph = generate_fully_connected_graph()
             new_graph = enforce_max_nodes(new_graph, max_nodes)
 
             # Ensure new_graph is not a duplicate either
             while any(nx.is_isomorphic(new_graph, g,
                                        node_match=lambda x, y: x['type'] == y['type']) for g in unique_graphs):
-                new_graph = generate_fully_connected_graph(grid_size)
+                new_graph = generate_fully_connected_graph()
                 new_graph = enforce_max_nodes(new_graph, max_nodes)
 
             unique_graphs.append(new_graph)
@@ -266,21 +254,6 @@ def graph_to_matrix(graph, grid_size=(5, 5)):
     return grid, connectivity
 
 
-def filter_results(results: List):
-    fitness_list = []
-    reward_list = []
-    for res in results:
-        if isinstance(res, tuple):
-            fitness, reward = res
-            fitness_list.append(fitness)
-            reward_list.append(reward)
-        else:
-            # print("Invalid fitness or reward")
-            fitness_list.append(0)
-            reward_list.append(0)
-    return fitness_list, reward_list
-
-
 def evaluate_structure_fitness(robot_graph: nx.DiGraph, controller_type, scenario, view=False):
     structure, connectivity = graph_to_matrix(robot_graph)
     if (evogym.is_connected(structure) is False or
@@ -295,7 +268,7 @@ def evaluate_structure_fitness(robot_graph: nx.DiGraph, controller_type, scenari
         current_viewer.track_objects(('robot',))
         action_size = current_sim.get_dim_action_space('robot')
         t, t_reward, final_pos, average_speed = 0, 0, 0, 0
-        controller = Controller(controller_type=controller_type, action_size=action_size)
+        controller = Controller.Controller(controller_type=controller_type, action_size=action_size)
         initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
         for t in range(STEPS):
             if view:
@@ -358,6 +331,20 @@ def count_duplicate_digraphs(graph_list):
 
 # ===== EVOLUTIONARY ALGORITHM =====
 def evolutionary_algorithm(seed, controller, scenario, debug=True):
+    def filter_results(results: List):
+        fitness_list = []
+        reward_list = []
+        for res in results:
+            if isinstance(res, tuple):
+                fitness, reward = res
+                fitness_list.append(fitness)
+                reward_list.append(reward)
+            else:
+                # print("Invalid fitness or reward")
+                fitness_list.append(0)
+                reward_list.append(0)
+        return fitness_list, reward_list
+
     """Main EA loop with modular operators (parallelized fitness evaluation)."""
     np.random.seed(seed)
     random.seed(seed)
@@ -429,9 +416,9 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
     if testing:
-        path = f"./testing/fixed_controller/{seed}/{controller}/{scenario}/"
+        path = f"../../evolve_structure/testing/fixed_controller/{seed}/{controller}/{scenario}/"
     else:
-        path = f"./data/fixed_controller/{controller}/{scenario}/"
+        path = f"../../evolve_structure/data/fixed_controller/{controller}/{scenario}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(path, exist_ok=True)
     filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -465,7 +452,7 @@ def seeds_():
     for seed in [271828, 2 ** 32 - 1]:
         for scenario in SCENARIOS:
             for controller in CONTROLLERS:
-                run(seed=seed, controller=controller, scenario=scenario, testing=True)
+                run(batches=1, seed=seed, controller=controller, scenario=scenario, testing=True)
 
 
 # ===== RUN AND VISUALIZE =====

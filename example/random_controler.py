@@ -1,6 +1,6 @@
 from evogym.envs import *
 from evogym import EvoViewer, get_full_connectivity
-from implementation.evolve_controller.neural_controller import *
+from implementation.code.AuxiliaryClasses.NeuralController import *
 
 
 NUM_GENERATIONS = 100  # Number of generations to evolve

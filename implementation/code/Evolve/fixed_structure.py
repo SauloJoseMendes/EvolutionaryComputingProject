@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from evogym.envs import *
 
-from implementation.evolve_controller.neural_controller import NeuralController, initialize_weights, get_weights, set_weights
+from AuxiliaryClasses.NeuralController import NeuralController, initialize_weights, get_weights, set_weights
 import numpy as np
 
 SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0']
@@ -169,8 +169,7 @@ def crossover(parent1: NeuralController,
     w2 = [p.detach().numpy() for p in parent2.parameters()]
     new_weights = [np.where(np.random.rand(*a.shape) < crossover_rate, a, b)
                    for a, b in zip(w1, w2)]
-    for param, nw in zip(child.parameters(), new_weights):
-        param.data = torch.tensor(nw, dtype=torch.float32)
+    set_weights(child, new_weights)
     return child
 
 
@@ -258,8 +257,8 @@ def save(data_csv, seed, scenario, testing):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
     if testing:
-        run_path = f"./testing/runs/{seed}/{scenario}/"
-        weights_path = f"./testing/weights/{seed}/{scenario}/"
+        run_path = f"../../evolve_controller/testing/runs/{seed}/{scenario}/"
+        weights_path = f"../../evolve_controller/testing/weights/{seed}/{scenario}/"
     else:
         run_path = f"./data/runs/{seed}/{scenario}/"
         weights_path = f"./data/weights/{seed}/{scenario}/"
@@ -276,8 +275,7 @@ def save(data_csv, seed, scenario, testing):
 
 def run(seed, scenario, testing=False, batches=1):
     for iteration in range(batches):
-        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = ea(seed=seed,
-                                                                                    scenario=scenario)
+        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = ea(seed=seed, scenario=scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
@@ -302,5 +300,5 @@ def seeds_():
 
 
 if __name__ == '__main__':
-    for _scenario in SCENARIOS:
-        run(batches=5, seed=271828, scenario=_scenario)
+    for _scenario in ['ObstacleTraverser-v0']:
+        run(batches=3, seed=271828, scenario=_scenario)

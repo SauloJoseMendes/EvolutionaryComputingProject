@@ -207,4 +207,4 @@ if __name__ == "__main__":
     print(analyzer.summary_by_controller)
     # analyzer.plot_metrics(save_path="./plots")
     analyzer.summarize_by_seed()
-    analyzer.plot_by_seed("alternating_gait", save_path="./plots")
+    analyzer.plot_by_seed("alternating_gait", save_path="../../evolve_structure/plots")

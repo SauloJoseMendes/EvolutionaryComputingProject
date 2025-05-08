@@ -301,5 +301,5 @@ def run(scenario, batches=1):
 
 
 if __name__ == '__main__':
-    for _scenario in ['ObstacleTraverser-v0']:
+    for _scenario in SCENARIOS:
         run(batches=3, scenario=_scenario)

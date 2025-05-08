@@ -116,6 +116,9 @@ def evolutionary_search(
     best_structures = [copy.deepcopy(np.array(population))]
     best_fitnesses = [max(fitnesses)]
     best_rewards = [rewards[np.argmax(fitnesses)]]
+
+    fitnesses = np.array(fitnesses)
+    rewards = np.array(rewards)
     fitnesses = fitnesses[np.isfinite(fitnesses)]
     rewards = rewards[np.isfinite(rewards)]
     avg_fitness = [float(np.mean(fitnesses))]

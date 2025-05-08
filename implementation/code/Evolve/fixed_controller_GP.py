@@ -389,6 +389,8 @@ def evolutionary_algorithm(controller, scenario, debug=True):
             # print(graph_to_matrix(population[current_best_fitness_idx]))
 
             # Track average
+            fitnesses = np.array(fitnesses)
+            rewards = np.array(rewards)
             fitnesses = fitnesses[np.isfinite(fitnesses)]
             rewards = rewards[np.isfinite(rewards)]
             avg_fitness[generation] = np.nanmean(fitnesses)

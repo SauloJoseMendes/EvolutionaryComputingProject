@@ -357,9 +357,9 @@ def evolutionary_algorithm(seed, controller, scenario, debug=True):
         return fitness_list, reward_list
 
     """Main EA loop with modular operators (parallelized fitness evaluation)."""
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
+    np.random.seed()
+    random.seed()
+    torch.manual_seed()
     population = [generate_fully_connected_graph() for _ in range(POPULATION_SIZE)]
     best_structures = np.empty((NUM_GENERATIONS, 5, 5))
     best_fitnesses = np.empty(NUM_GENERATIONS)

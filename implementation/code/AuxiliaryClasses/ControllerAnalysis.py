@@ -3,10 +3,11 @@ from glob import glob
 
 import matplotlib.pyplot as plt
 import pandas as pd
-
+from scipy.stats import kruskal, mannwhitneyu
+from itertools import combinations
 
 class ControllerAnalysis:
-    def __init__(self, base_path="./testing/fixed_controller/", metrics=None):
+    def __init__(self, base_path="../../evolve_structure/GP/testing/fixed_controller/", metrics=None):
         self.base_path = base_path
         self.metrics = metrics if metrics else ["Best Reward", "Best Fitness"]
         self.data = None
@@ -95,6 +96,49 @@ class ControllerAnalysis:
                 .agg(["mean", "std"])
                 .reset_index()
         )
+
+    def compare_controllers_statistically(self):
+        """
+        Perform non-parametric statistical comparison between controllers
+        using Kruskal-Wallis and pairwise Mann-Whitney U tests with Bonferroni correction.
+        """
+        if not hasattr(self, 'data') or self.data.empty:
+            raise ValueError("No data loaded. Call load_data() first.")
+
+        print("\nStatistical Comparison of Controllers:")
+
+        for metric in ["Best Fitness", "Best Reward"]:  # Or any other metrics you have
+            print(f"\n--- Metric: {metric} ---")
+
+            # Prepare data: list of arrays (one array per controller with all observations)
+            controllers = self.data['Controller'].unique()
+            data = [self.data[self.data['Controller'] == c][metric].values for c in controllers]
+
+            # 1. Kruskal-Wallis test (omnibus test)
+            h_stat, p_value = kruskal(*data)  # Fixed import here
+            print(f"Kruskal-Wallis H-test: H={h_stat:.3f}, p={p_value:.4f}")
+
+            if p_value < 0.05:
+                print("Significant differences found between controllers (p < 0.05)")
+
+                # 2. Pairwise Mann-Whitney U tests with Bonferroni correction
+                n_comparisons = len(controllers) * (len(controllers) - 1) // 2
+                alpha = 0.05 / n_comparisons if n_comparisons > 0 else 0.05
+
+                print("\nPairwise comparisons (Mann-Whitney U with Bonferroni correction):")
+                for (c1, c2) in combinations(controllers, 2):  # Now properly imported
+                    group1 = self.data[self.data['Controller'] == c1][metric]
+                    group2 = self.data[self.data['Controller'] == c2][metric]
+
+                    u_stat, p = mannwhitneyu(group1, group2, alternative='two-sided')
+                    significant = "YES" if p < alpha else "NO"
+                    print(f"{c1} vs {c2}: U={u_stat:.1f}, p={p:.4f} (adj. α={alpha:.4f}), significant={significant}")
+
+                    # Calculate effect size (Cliff's delta)
+                    delta = (2 * u_stat / (len(group1) * len(group2))) - 1
+                    print(f"   Effect size (Cliff's delta): {delta:.3f}")
+            else:
+                print("No significant differences found between controllers (p ≥ 0.05)")
 
     def plot_metrics(self, save_path=None):
         if self.summary_by_controller is None:
@@ -208,3 +252,4 @@ if __name__ == "__main__":
     # analyzer.plot_metrics(save_path="./plots")
     analyzer.summarize_by_seed()
     analyzer.plot_by_seed("alternating_gait", save_path="../../evolve_structure/plots")
+    analyzer.compare_controllers_statistically()

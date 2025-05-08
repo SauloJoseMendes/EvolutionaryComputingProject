@@ -64,14 +64,13 @@ def create_population(scenario):
     return population
 
 
-def mutate(weights, mutation_strength=0.5):
-    new_weights = []
-    for w in weights:
-        noise = np.random.randn(*w.shape) * mutation_strength
-        mask = np.random.rand(*w.shape) < MUTATION_RATE
-        new_w = w + noise * mask
-        new_weights.append(new_w)
-    return new_weights
+def de_mutation(population: List[NeuralController], F=0.5):
+    mutated = []
+    for i in range(len(population)):
+        a, b, c = population[np.random.choice(len(population), 3, replace=False)]
+        donor = a + F * (b - c)  # DE-style mutation
+        mutated.append(donor)
+    return mutated
 
 
 def evaluate_controller_fitness(controller, scenario, view=False):
@@ -182,8 +181,8 @@ def elitism(population: List[NeuralController],
 
 # === Main Evolutionary Algorithm ===
 
-def ea(seed: int,
-       scenario: str):
+def evolve(seed: int,
+           scenario: str):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
     Returns the final population of controllers.
@@ -231,19 +230,9 @@ def ea(seed: int,
 
             # Generate children until full size
             children: List[NeuralController] = []
-            while len(children) < POPULATION_SIZE - len(elites):
-                # Tournament select two parents
-                parents = tournament_selection(population,
-                                               list(fitnesses),
-                                               tournament_size=3,
-                                               num_winners=2)
-                # Crossover
-                child = crossover(parents[0], parents[1], crossover_rate=0.5)
-                # Mutation
-                w = get_weights(child)
-                w_mut = mutate(w)
-                set_weights(child, w_mut)
-                children.append(child)
+            for _ in range(len(population) - ELITISM_SIZE):
+                #mutate here
+                print("hi")
 
             # New population
             population = elites + children
@@ -257,11 +246,11 @@ def save(data_csv, seed, scenario, testing):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
     if testing:
-        run_path = f"../../evolve_controller/testing/runs/{seed}/{scenario}/"
-        weights_path = f"../../evolve_controller/testing/weights/{seed}/{scenario}/"
+        run_path = f"../../evolve_controller/GA+ES/testing/runs/{seed}/{scenario}/"
+        weights_path = f"../../evolve_controller/GA+ES/testing/weights/{seed}/{scenario}/"
     else:
-        run_path = f"./data/runs/{seed}/{scenario}/"
-        weights_path = f"./data/weights/{seed}/{scenario}/"
+        run_path = f"../../evolve_controllerdata/runs/{seed}/{scenario}/"
+        weights_path = f"../../evolve_controller/GA+ES/data/weights/{seed}/{scenario}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -275,7 +264,7 @@ def save(data_csv, seed, scenario, testing):
 
 def run(seed, scenario, testing=False, batches=1):
     for iteration in range(batches):
-        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = ea(seed=seed, scenario=scenario)
+        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(seed=seed, scenario=scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")

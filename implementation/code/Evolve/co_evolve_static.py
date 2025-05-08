@@ -7,8 +7,8 @@ import pandas as pd
 import torch
 from evogym.envs import *
 
-import fixed_controller as es
-import fixed_structure as ec
+import fixed_controller_GP as es
+import fixed_structure_hybrid as ec
 from AuxiliaryClasses.Genome import Genome
 
 SCENARIOS = ['GapJumper-v0', 'CaveCrawler-v0']
@@ -16,8 +16,8 @@ SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
 BATCH_SIZE = 1
-NUM_GENERATIONS = 2
-POPULATION_SIZE = 4
+NUM_GENERATIONS = 50
+POPULATION_SIZE = 50
 TOURNAMENT_SIZE = 3
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
@@ -34,8 +34,8 @@ def save(data_csv, seed, scenario, testing):
         run_path = f"../../evolve_both/testing/runs/{seed}/{scenario}/"
         genomes_path = f"../../evolve_both/testing/genomes/{seed}/{scenario}/"
     else:
-        run_path = f"./data/runs/{seed}/{scenario}/"
-        genomes_path = f"./data/genomes/{seed}/{scenario}/"
+        run_path = f"../../evolve_both/data/runs/{seed}/{scenario}/"
+        genomes_path = f"../../evolve_both/data/genomes/{seed}/{scenario}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -57,17 +57,41 @@ def initialize_population(scenario) -> List[Genome]:
 
 
 def evaluate(individual: Genome, scenario: str, view: bool = False) -> Tuple[float, float]:
+    def check_compatibility(env) -> Tuple[bool, float]:
+        # genome declares how many inputs/outputs it expects:
+        x = individual.input_size
+        y = individual.output_size
+
+        # environment actually provides:
+        w = env.observation_space.shape[0]
+        z = env.action_space.shape[0]
+
+        # if they match exactly, OK
+        if x == w and y == z:
+            return True, 0.0
+
+        # otherwise return False plus the negative L₁‐distance penalty
+        penalty = - (abs(x - w) + abs(y - z))
+        return False, penalty
+
     """Evaluate the fitness of a single individual by decoding and testing its joint components."""
     try:
         controller = individual.get_controller()
         individual_structure = individual.get_structure()
         robot, connections = es.graph_to_matrix(individual_structure)
+        # print("OLA")
         # 1. Create the environment
         env = gym.make(scenario,
                        max_episode_steps=STEPS,
                        body=robot,
                        connections=connections)
 
+        # Check compatibility
+        # print("OLA2")
+        isCompatible, penalty = check_compatibility(env)
+        # print("OLA3")
+        if isCompatible is False:
+            return penalty, 0
         # 2. Reset & get initial state
         state = env.reset()
 
@@ -129,8 +153,7 @@ def evaluate(individual: Genome, scenario: str, view: bool = False) -> Tuple[flo
 
         return final_fitness, total_reward
     except ValueError as error_fitness:
-        print(f"Error during environment creation, discarding unusable controller: {error_fitness}")
-        return np.nan, np.nan
+        return -np.inf, -np.inf
 
 
 def select_parents(population, fitness_scores, num_winners=1):
@@ -263,7 +286,7 @@ def evolve(seed: int, scenario: str, debug=False):
 
 def run(seed, scenario, testing=False, batches=1):
     for iteration in range(batches):
-        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(seed=seed, scenario=scenario)
+        best_genomes, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(seed=seed, scenario=scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
@@ -272,7 +295,7 @@ def run(seed, scenario, testing=False, batches=1):
             "Average Reward": avg_reward,
             "Best Fitness": best_fitnesses,
             "Best Reward": best_rewards,
-            "Best Weights": best_weights,
+            "Best Genomes": best_genomes,
         }
         save(data, seed, scenario, testing)
         # Visualize the best structure
@@ -282,5 +305,5 @@ def run(seed, scenario, testing=False, batches=1):
 
 
 if __name__ == '__main__':
-    for _scenario in SCENARIOS:
-        run(batches=5, seed=271828, scenario=_scenario)
+    for _scenario in ['GapJumper-v0']:
+        run(batches=1, seed=271828, scenario=_scenario)

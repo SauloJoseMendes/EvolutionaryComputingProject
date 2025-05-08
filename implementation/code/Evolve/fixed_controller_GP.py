@@ -43,18 +43,29 @@ def enforce_max_nodes(graph: nx.DiGraph, max_nodes: int = 25) -> nx.DiGraph:
 
 
 def generate_fully_connected_graph():
-    num_nodes = random.randint(5, 15)
+    rows, _ = (5, 5)
+    num_nodes = random.randint(3, 15)  # Generate a small number of nodes
     graph = nx.DiGraph()
-
+    # Add nodes
     for i in range(num_nodes):
         graph.add_node(i, type=random.choice([1, 2, 3, 4]))
 
-    for i in graph.nodes():
-        for j in graph.nodes():
-            if i != j:
-                graph.add_edge(i, j)
+    # Connect the nodes to form a connected component (e.g., a chain or a small tree)
+    nodes = list(graph.nodes())
+    if nodes:
+        start_node = random.choice(nodes)
+        remaining_nodes = set(nodes)
+        remaining_nodes.remove(start_node)
+        connected_component = {start_node}
 
-    return graph
+        while remaining_nodes:
+            source_node = random.choice(list(connected_component))
+            target_node = random.choice(list(remaining_nodes))
+            graph.add_edge(source_node, target_node)
+            connected_component.add(target_node)
+            remaining_nodes.remove(target_node)
+
+    return enforce_max_nodes(graph)
 
 
 # ===== EVOLUTIONARY OPERATORS =====
@@ -416,9 +427,9 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
     if testing:
-        path = f"../../evolve_structure/testing/fixed_controller/{seed}/{controller}/{scenario}/"
+        path = f"../../evolve_structure/GP/testing/fixed_controller/{seed}/{controller}/{scenario}/"
     else:
-        path = f"../../evolve_structure/data/fixed_controller/{controller}/{scenario}/"
+        path = f"../../evolve_structure/GP/data/fixed_controller/{controller}/{scenario}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(path, exist_ok=True)
     filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"

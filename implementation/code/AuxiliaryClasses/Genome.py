@@ -1,8 +1,9 @@
+import evogym
 import networkx as nx
 import torch
 from evogym.envs import *
 from AuxiliaryClasses.NeuralController import NeuralController, get_weights, set_weights
-from Evolve.fixed_controller import generate_fully_connected_graph, graph_to_matrix
+from Evolve.fixed_controller_GP import generate_fully_connected_graph, graph_to_matrix
 
 
 class Genome:
@@ -12,14 +13,32 @@ class Genome:
         torch.manual_seed(seed)
         self.scenario = scenario
         self.steps = steps
-        self.structure = self.initialize_structure()
-        self.controller = self.controller = initialize_controller(self.structure, self.scenario, self.steps)
+        self.structure = None
+        self.controller = None
+        self.input = []
+        self.input = []
+        self.initialize_structure()
+        self.initialize_controller()
 
-    @staticmethod
-    def initialize_structure() -> nx.DiGraph:
+    def initialize_structure(self):
+        self.structure = generate_fully_connected_graph()
 
-        structure = generate_fully_connected_graph()
-        return structure
+    def initialize_controller(self):
+        robot = np.array([
+            [1, 3, 1, 0, 0],
+            [4, 1, 3, 2, 2],
+            [3, 4, 4, 4, 4],
+            [3, 0, 0, 3, 2],
+            [0, 0, 0, 0, 2]
+        ])
+        connections = evogym.get_full_connectivity(robot)
+        env = gym.make(self.scenario, max_episode_steps=self.steps, body=robot, connections=connections)
+        input_size = env.observation_space.shape[0]
+        output_size = env.action_space.shape[0]
+        env.close()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.controller = NeuralController(input_size, output_size)
 
     def get_structure(self) -> nx.DiGraph:
         return self.structure
@@ -53,7 +72,8 @@ class Genome:
         """Reconstruct from dictionary"""
         genome = cls(data['scenario'], data['steps'])
         genome.structure = nx.node_link_graph(data['structure'])
-        genome.controller = Genome.initialize_controller(genome.structure, data['scenario'], data['steps'])
+        genome.initialize_controller()
+        set_weights(genome.controller, data['weights'])
         set_weights(genome.controller, data['weights'])
         return genome
 
@@ -67,12 +87,4 @@ class Genome:
         return [Genome.from_dict(d) for d in torch.load(path)]
 
 
-def initialize_controller(structure: nx.DiGraph, scenario: str, steps: int = 500) -> NeuralController:
-    robot, connections = graph_to_matrix(structure)
 
-    env = gym.make(scenario, max_episode_steps=steps, body=robot, connections=connections)
-    input_size = env.observation_space.shape[0]
-    output_size = env.action_space.shape[0]
-    env.close()
-
-    return NeuralController(input_size, output_size)

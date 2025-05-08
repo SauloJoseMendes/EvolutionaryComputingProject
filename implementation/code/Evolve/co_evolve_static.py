@@ -16,7 +16,9 @@ SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
 BATCH_SIZE = 1
-NUM_GENERATIONS = 50
+NUM_GENERATIONS_BOTH = 30
+NUM_GENERATIONS_SINGLE = 20
+NUM_GENERATIONS = NUM_GENERATIONS_BOTH + NUM_GENERATIONS_SINGLE
 POPULATION_SIZE = 50
 TOURNAMENT_SIZE = 3
 MUTATION_RATE = 0.4
@@ -145,32 +147,30 @@ def select_parents(population, fitness_scores, num_winners=1):
     return winners
 
 
-def crossover(parent1: Genome, parent2: Genome) -> Genome:
+def crossover(parent1: Genome, parent2: Genome, both: bool = True) -> Genome:
     """Perform crossover between two parent individuals to produce offspring."""
-    parent1_graph = parent1.get_structure()
-    parent2_graph = parent2.get_structure()
     parent1_controller = parent1.get_controller()
     parent2_controller = parent2.get_controller()
-
     offspring = copy.deepcopy(parent1)
-
-    offspring_graph = es.grafting_crossover(parent1_graph, parent2_graph)
     offspring_controller = ec.crossover(parent1_controller, parent2_controller)
-    offspring.set_structure(offspring_graph)
     offspring.set_controller(offspring_controller)
+    if both:
+        parent1_graph = parent1.get_structure()
+        parent2_graph = parent2.get_structure()
+        offspring_graph = es.grafting_crossover(parent1_graph, parent2_graph)
+        offspring.set_structure(offspring_graph)
 
     return offspring
 
 
-def mutate(individual: Genome) -> Genome:
+def mutate(individual: Genome, both: bool = True) -> Genome:
     """Apply mutation to an individual based on a given mutation rate."""
-    individual_graph = individual.get_structure()
+    if both:
+        individual_graph = individual.get_structure()
+        resulting_graph = es.mutate_structure(individual_graph, mutation_rate=MUTATION_RATE)
+        individual.set_structure(resulting_graph)
     individual_weights = individual.get_weights()
-
-    resulting_graph = es.mutate_structure(individual_graph, mutation_rate=MUTATION_RATE)
     resulting_weights = ec.mutate(weights=individual_weights, mutation_strength=MUTATION_RATE)
-
-    individual.set_structure(resulting_graph)
     individual.set_weights(resulting_weights)
     return individual
 
@@ -181,7 +181,7 @@ def elitism(population: List[Genome], fitness_scores: List[float]) -> List[Genom
     return [copy.deepcopy(population[i]) for i in sorted_idx]
 
 
-def evolve(scenario: str, debug=False):
+def evolve(scenario: str, debug=True):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
     Returns the final population of controllers.
@@ -216,9 +216,11 @@ def evolve(scenario: str, debug=False):
 
     # Initialize population
     population = initialize_population(scenario)
-
+    both = True
     with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
         for generation in range(NUM_GENERATIONS):
+            if generation > NUM_GENERATIONS_BOTH:
+                both = False
             # Parallel fitness evaluation
             evaluator = partial(evaluate,
                                 scenario=scenario)
@@ -235,13 +237,20 @@ def evolve(scenario: str, debug=False):
 
             # print(graph_to_matrix(population[current_best_fitness_idx]))
 
-            # Track average
             fitness_scores = np.array(fitness_scores)
             rewards = np.array(rewards)
-            fitness_scores = fitness_scores[np.isfinite(fitness_scores)]
-            rewards = rewards[np.isfinite(rewards)]
-            avg_fitness[generation] = np.nanmean(fitness_scores)
-            avg_rewards[generation] = np.nanmean(rewards)
+
+            # Track average
+            fitness_scores_c = fitness_scores[np.isfinite(fitness_scores)]
+            rewards_c = rewards[np.isfinite(rewards)]
+            if rewards_c.shape[0] == 0:
+                avg_rewards[generation] = np.nan
+            else:
+                avg_rewards[generation] = np.nanmean(rewards_c)
+            if fitness_scores_c.shape[0] == 0:
+                avg_fitness[generation] = np.nan
+            else:
+                avg_fitness[generation] = np.nanmean(fitness_scores_c)
 
             # Elitism: keep top 2
             elites = elitism(population, list(fitness_scores))
@@ -254,14 +263,15 @@ def evolve(scenario: str, debug=False):
                                          fitness_scores=list(fitness_scores),
                                          num_winners=2)
                 # Crossover
-                child = crossover(parents[0], parents[1])
-                mutate(child)
+                child = crossover(parents[0], parents[1], both=both)
+                mutate(child, both=both)
                 offspring.append(child)
 
             # New population
             population = elites + offspring
             if debug:
-                print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitness_scores):.3f}")
+                print(f"Generation {generation + 1} best fitness: {best_fitness_scores[generation]:.3f}, "
+                      f"best reward : {best_rewards[generation]}")
 
     return best_genomes, best_fitness_scores, best_rewards, avg_fitness, avg_rewards
 

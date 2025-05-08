@@ -15,8 +15,8 @@ SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
 BATCH_SIZE = 1
-NUM_GENERATIONS = 250
-POPULATION_SIZE = 100
+NUM_GENERATIONS = 50
+POPULATION_SIZE = 50
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -198,7 +198,7 @@ def elitism(population: List[NeuralController],
 
 # === Main Evolutionary Algorithm ===
 
-def evolve(scenario: str):
+def evolve(scenario: str, debug=True):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
     Returns the final population of controllers.
@@ -258,7 +258,8 @@ def evolve(scenario: str):
 
             # New population
             population = elites + children
-            # print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
+            if debug:
+                print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
 
     return best_weights, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 

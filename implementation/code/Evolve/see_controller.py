@@ -46,7 +46,7 @@ def create_gif(robot_structure, filename='best_robot.gif', duration=0.066, scena
         env.reset()
         sim = env.sim
         viewer = EvoViewer(sim)
-        viewer.track_objects(('robot',))
+        viewer.track_objects('robot')
         frames = []
         action_size = sim.get_dim_action_space('robot')  # Get correct action size
         t_reward = 0
@@ -66,7 +66,7 @@ def create_gif(robot_structure, filename='best_robot.gif', duration=0.066, scena
         viewer.close()
         imageio.mimsave(filename, frames, duration=duration, optimize=True)
     except ValueError as e:
-        print('Invalid')
+        print('Invalid, ' + str(e))
 
 
 def convert_last_row_to_matrix(csv_file_path):
@@ -108,15 +108,11 @@ def convert_last_row_to_matrix(csv_file_path):
 
 
 def simulate(best_robot, scenario, save_path, controller='alternating_gait', steps=500):
-    i = 0
-    while i < 10:
-        simulate_best_robot(best_robot, scenario=scenario, steps=steps)
-        i += 1
-    controller = Controller.Controller(controller)
+    simulate_best_robot(best_robot, scenario=scenario, steps=steps, controller=controller)
     create_gif(best_robot, filename=save_path, scenario=scenario, steps=steps)
 
 
 if __name__ == '__main__':
     robot = convert_last_row_to_matrix(
-        '../../evolve_structure/ES/data/fixed_controller/alternating_gait/BridgeWalker-v0/2025_05_08_at_13_20_30.csv')
-    simulate(robot, "BridgeWalker-v0", "../../evolve_structure/ES/2025_05_08_at_13_20_30.gif")
+        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_structure/ES/data/fixed_controller/alternating_gait/BridgeWalker-v0/2025_05_08_at_13_20_30.csv')
+    simulate(robot, "BridgeWalker-v0", "/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_structure/ES/data/fixed_controller/alternating_gait/BridgeWalker-v0/2025_05_08_at_13_20_30.gif")

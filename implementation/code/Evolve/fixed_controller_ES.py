@@ -11,7 +11,8 @@ from evogym.envs import *
 from AuxiliaryClasses import Controller
 
 # ---- PARAMETERS ----
-NUM_GENERATIONS = 50  # Number of generations to evolve
+NUM_GENERATIONS = 250  # Number of generations to evolve
+POPULATION_SIZE = 100
 MIN_GRID_SIZE = (5, 5)  # Minimum size of the robot grid
 MAX_GRID_SIZE = (5, 5)  # Maximum size of the robot grid
 
@@ -80,7 +81,6 @@ def mutate_robot(parent, mutation_rate=0.1):
 def evolutionary_search(
         scenario,
         controller,
-        mu=1,
         lamb=10,
 ):
     def filter_results(results: List):
@@ -101,7 +101,7 @@ def evolutionary_search(
     random.seed(None)
     torch.manual_seed(int(time.time()))
     # Initialize μ parents
-    population = [create_random_robot() for _ in range(mu)]
+    population = [create_random_robot() for _ in range(POPULATION_SIZE)]
     # Evaluate initial population in parallel
     evaluator = partial(evaluate_fitness,
                         scenario=scenario,
@@ -143,7 +143,7 @@ def evolutionary_search(
             all_rews = list(rewards) + off_rews
 
             # d) select top μ …
-            idx_sorted = np.argsort(all_fits)[-mu:]
+            idx_sorted = np.argsort(all_fits)[-POPULATION_SIZE:]
             population = [copy.deepcopy(all_individuals[i])
                           for i in idx_sorted]
             fitnesses = [all_fits[i] for i in idx_sorted]

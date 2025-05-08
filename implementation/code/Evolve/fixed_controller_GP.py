@@ -25,7 +25,6 @@ TESTING = False
 STEPS = 500
 SCENARIOS = ['Walker-v0', 'BridgeWalker-v0']
 CONTROLLERS = ['alternating_gait', 'sinusoidal_wave', 'hopping_motion']
-SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 
 # ===== STRUCTURE REPRESENTATION =====
@@ -431,7 +430,7 @@ def save_to_csv(data_csv, controller, scenario):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
 
-    path = f"../../evolve_structure/GP/data/fixed_controller/{controller}/{scenario}/{NUM_GENERATIONS}"
+    path = f"../../evolve_structure/GP/data/fixed_controller/{controller}/{scenario}/{NUM_GENERATIONS}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(path, exist_ok=True)
     filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"

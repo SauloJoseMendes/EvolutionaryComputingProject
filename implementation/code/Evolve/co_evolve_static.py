@@ -26,16 +26,12 @@ ELITISM_SIZE = 2
 STEPS = 500
 
 
-def save(data_csv, seed, scenario, testing):
+def save(data_csv, scenario):
     best_genomes = data_csv.pop("Best Genomes")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    if testing:
-        run_path = f"../../evolve_both/testing/runs/{seed}/{scenario}/"
-        genomes_path = f"../../evolve_both/testing/genomes/{seed}/{scenario}/"
-    else:
-        run_path = f"../../evolve_both/data/runs/{seed}/{scenario}/"
-        genomes_path = f"../../evolve_both/data/genomes/{seed}/{scenario}/"
+    run_path = f"../../evolve_both/testing/runs/{scenario}/{NUM_GENERATIONS}"
+    genomes_path = f"../../evolve_both/testing/genomes/{scenario}/{NUM_GENERATIONS}"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -203,7 +199,7 @@ def elitism(population: List[Genome], fitness_scores: List[float]) -> List[Genom
     return [copy.deepcopy(population[i]) for i in sorted_idx]
 
 
-def evolve(seed: int, scenario: str, debug=False):
+def evolve(scenario: str, debug=False):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
     Returns the final population of controllers.
@@ -232,9 +228,9 @@ def evolve(seed: int, scenario: str, debug=False):
     avg_rewards = np.full(NUM_GENERATIONS, np.nan)
 
     # Reproducibility
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
+    np.random.seed(None)
+    random.seed(None)
+    torch.manual_seed(int(time.time()))
 
     # Initialize population
     population = initialize_population(scenario)
@@ -258,6 +254,8 @@ def evolve(seed: int, scenario: str, debug=False):
             # print(graph_to_matrix(population[current_best_fitness_idx]))
 
             # Track average
+            fitness_scores = fitness_scores[np.isfinite(fitness_scores)]
+            rewards = rewards[np.isfinite(rewards)]
             avg_fitness[generation] = np.nanmean(fitness_scores)
             avg_rewards[generation] = np.nanmean(rewards)
 
@@ -284,9 +282,9 @@ def evolve(seed: int, scenario: str, debug=False):
     return best_genomes, best_fitness_scores, best_rewards, avg_fitness, avg_rewards
 
 
-def run(seed, scenario, testing=False, batches=1):
+def run(scenario, batches=1):
     for iteration in range(batches):
-        best_genomes, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(seed=seed, scenario=scenario)
+        best_genomes, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(scenario=scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
@@ -297,7 +295,7 @@ def run(seed, scenario, testing=False, batches=1):
             "Best Reward": best_rewards,
             "Best Genomes": best_genomes,
         }
-        save(data, seed, scenario, testing)
+        save(data, scenario)
         # Visualize the best structure
         # print("Visualizing the best robot...")
         # evaluate_structure_fitness(best_structures[-1], view=True)
@@ -306,4 +304,4 @@ def run(seed, scenario, testing=False, batches=1):
 
 if __name__ == '__main__':
     for _scenario in ['GapJumper-v0']:
-        run(batches=1, seed=271828, scenario=_scenario)
+        run(batches=1, scenario=_scenario)

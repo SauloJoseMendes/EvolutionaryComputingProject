@@ -341,7 +341,7 @@ def count_duplicate_digraphs(graph_list):
 
 
 # ===== EVOLUTIONARY ALGORITHM =====
-def evolutionary_algorithm(seed, controller, scenario, debug=True):
+def evolutionary_algorithm(controller, scenario, debug=True):
     def filter_results(results: List):
         fitness_list = []
         reward_list = []
@@ -357,9 +357,9 @@ def evolutionary_algorithm(seed, controller, scenario, debug=True):
         return fitness_list, reward_list
 
     """Main EA loop with modular operators (parallelized fitness evaluation)."""
-    np.random.seed()
-    random.seed()
-    torch.manual_seed()
+    np.random.seed(None)
+    random.seed(None)
+    torch.manual_seed(int(time.time()))
     population = [generate_fully_connected_graph() for _ in range(POPULATION_SIZE)]
     best_structures = np.empty((NUM_GENERATIONS, 5, 5))
     best_fitnesses = np.empty(NUM_GENERATIONS)
@@ -389,6 +389,8 @@ def evolutionary_algorithm(seed, controller, scenario, debug=True):
             # print(graph_to_matrix(population[current_best_fitness_idx]))
 
             # Track average
+            fitnesses = fitnesses[np.isfinite(fitnesses)]
+            rewards = rewards[np.isfinite(rewards)]
             avg_fitness[generation] = np.nanmean(fitnesses)
             avg_rewards[generation] = np.nanmean(rewards)
 
@@ -423,13 +425,11 @@ def evolutionary_algorithm(seed, controller, scenario, debug=True):
     return best_structures, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
 
-def save_to_csv(data_csv, seed, controller, scenario, testing):
+def save_to_csv(data_csv, controller, scenario):
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    if testing:
-        path = f"../../evolve_structure/GP/testing/fixed_controller/{seed}/{controller}/{scenario}/"
-    else:
-        path = f"../../evolve_structure/GP/data/fixed_controller/{controller}/{scenario}/"
+
+    path = f"../../evolve_structure/GP/data/fixed_controller/{controller}/{scenario}/{NUM_GENERATIONS}"
     # Create all intermediate directories if they don't exist
     os.makedirs(path, exist_ok=True)
     filename = path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -437,10 +437,9 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     df.to_csv(filename, index=False)
 
 
-def run(batches, seed, controller, scenario, testing=False):
+def run(batches, controller, scenario):
     for iteration in range(batches):
-        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm(seed,
-                                                                                                        controller,
+        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_algorithm(controller,
                                                                                                         scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
@@ -452,22 +451,15 @@ def run(batches, seed, controller, scenario, testing=False):
             "Best Reward": best_rewards,
             "Best Structure": [",".join(map(str, mat.flatten())) for mat in best_structures],
         }
-        save_to_csv(data, seed, controller, scenario, testing)
+        save_to_csv(data, controller, scenario)
         # Visualize the best structure
         # print("Visualizing the best robot...")
         # evaluate_structure_fitness(best_structures[-1], view=True)
         print("============================")
 
 
-def seeds_():
-    for seed in [271828, 2 ** 32 - 1]:
-        for scenario in SCENARIOS:
-            for controller in CONTROLLERS:
-                run(batches=1, seed=seed, controller=controller, scenario=scenario, testing=True)
-
-
 # ===== RUN AND VISUALIZE =====
 if __name__ == "__main__":
     _SCENARIOS = ['BridgeWalker-v0', 'Walker-v0']
     for _scenario in _SCENARIOS:
-        run(batches=5, seed=271828, controller='alternating_gait', scenario=_scenario)
+        run(batches=5, controller='alternating_gait', scenario=_scenario)

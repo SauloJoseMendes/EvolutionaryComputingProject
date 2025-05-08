@@ -181,8 +181,7 @@ def elitism(population: List[NeuralController],
 
 # === Main Evolutionary Algorithm ===
 
-def evolve(seed: int,
-           scenario: str):
+def evolve(scenario: str):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
     Returns the final population of controllers.
@@ -196,9 +195,9 @@ def evolve(seed: int,
     avg_rewards = np.full(NUM_GENERATIONS, np.nan)
 
     # Reproducibility
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
+    np.random.seed(None)
+    random.seed(None)
+    torch.manual_seed(int(time.time()))
 
     # Initialize population
     population = create_population(scenario)
@@ -222,6 +221,8 @@ def evolve(seed: int,
             # print(graph_to_matrix(population[current_best_fitness_idx]))
 
             # Track average
+            fitnesses = fitnesses[np.isfinite(fitnesses)]
+            rewards = rewards[np.isfinite(rewards)]
             avg_fitness[generation] = np.nanmean(fitnesses)
             avg_rewards[generation] = np.nanmean(rewards)
 
@@ -231,7 +232,7 @@ def evolve(seed: int,
             # Generate children until full size
             children: List[NeuralController] = []
             for _ in range(len(population) - ELITISM_SIZE):
-                #mutate here
+                # mutate here
                 print("hi")
 
             # New population
@@ -241,16 +242,12 @@ def evolve(seed: int,
     return best_weights, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
 
-def save(data_csv, seed, scenario, testing):
+def save(data_csv, scenario):
     best_weights = data_csv.pop("Best Weights")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    if testing:
-        run_path = f"../../evolve_controller/GA+ES/testing/runs/{seed}/{scenario}/"
-        weights_path = f"../../evolve_controller/GA+ES/testing/weights/{seed}/{scenario}/"
-    else:
-        run_path = f"../../evolve_controllerdata/runs/{seed}/{scenario}/"
-        weights_path = f"../../evolve_controller/GA+ES/data/weights/{seed}/{scenario}/"
+    run_path = f"../../evolve_controllerdata/runs/{scenario}/{NUM_GENERATIONS}"
+    weights_path = f"../../evolve_controller/GA+ES/data/weights/{scenario}/{NUM_GENERATIONS}"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -262,9 +259,9 @@ def save(data_csv, seed, scenario, testing):
     torch.save(best_weights, weights_filename)
 
 
-def run(seed, scenario, testing=False, batches=1):
+def run(scenario, testing=False, batches=1):
     for iteration in range(batches):
-        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(seed=seed, scenario=scenario)
+        best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(scenario=scenario)
         print(f"===== Iteration {iteration} =====")
         print(f"Best Fitness Achieved: {best_fitnesses[-1]}")
         print(f"Best Reward Achieved: {best_rewards[-1]}")
@@ -275,19 +272,13 @@ def run(seed, scenario, testing=False, batches=1):
             "Best Reward": best_rewards,
             "Best Weights": best_weights,
         }
-        save(data, seed, scenario, testing)
+        save(data, scenario)
         # Visualize the best structure
         # print("Visualizing the best robot...")
         # evaluate_structure_fitness(best_structures[-1], view=True)
         print("============================")
 
 
-def seeds_():
-    for seed in SEEDS:
-        for scenario in SCENARIOS:
-            run(seed=seed, scenario=scenario, testing=True)
-
-
 if __name__ == '__main__':
     for _scenario in ['ObstacleTraverser-v0']:
-        run(batches=3, seed=271828, scenario=_scenario)
+        run(batches=3, scenario=_scenario)

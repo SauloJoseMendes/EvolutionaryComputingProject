@@ -19,7 +19,7 @@ MAX_GRID_SIZE = (5, 5)  # Maximum size of the robot grid
 VOXEL_TYPES = [0, 1, 2, 3, 4]  # Empty, Rigid, Soft, Active (+/-)
 
 
-def evaluate_fitness(robot_structure, scenario: str, steps: int = 500, view=False):
+def evaluate_fitness(robot_structure, scenario: str, controller_type: str, steps: int = 500, view=False):
     connectivity = evogym.get_full_connectivity(robot_structure)
     if (evogym.is_connected(robot_structure) is False or
             connectivity.shape[1] == 0 or
@@ -33,7 +33,7 @@ def evaluate_fitness(robot_structure, scenario: str, steps: int = 500, view=Fals
         current_viewer.track_objects(('robot',))
         action_size = current_sim.get_dim_action_space('robot')
         t, t_reward, final_pos, average_speed = 0, 0, 0, 0
-        controller = Controller.Controller(controller_type='alternating_gait', action_size=action_size)
+        controller = Controller.Controller(controller_type=controller_type, action_size=action_size)
         initial_pos = current_sim.object_pos_at_time(current_sim.get_time(), 'robot').mean()
         for t in range(steps):
             if view:
@@ -78,9 +78,8 @@ def mutate_robot(parent, mutation_rate=0.1):
 
 
 def evolutionary_search(
-        seed,
-        controller,
         scenario,
+        controller,
         mu=1,
         lamb=10,
 ):
@@ -98,11 +97,15 @@ def evolutionary_search(
                 reward_list.append(0)
         return fitness_list, reward_list
 
+    np.random.seed(None)
+    random.seed(None)
+    torch.manual_seed(int(time.time()))
     # Initialize μ parents
     population = [create_random_robot() for _ in range(mu)]
     # Evaluate initial population in parallel
     evaluator = partial(evaluate_fitness,
-                        scenario=scenario)
+                        scenario=scenario,
+                        controller_type=controller)
 
     # 2) Evaluate initial parents
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
@@ -113,6 +116,8 @@ def evolutionary_search(
     best_structures = [copy.deepcopy(np.array(population))]
     best_fitnesses = [max(fitnesses)]
     best_rewards = [rewards[np.argmax(fitnesses)]]
+    fitnesses = fitnesses[np.isfinite(fitnesses)]
+    rewards = rewards[np.isfinite(rewards)]
     avg_fitness = [float(np.mean(fitnesses))]
     avg_reward = [float(np.mean(rewards))]
 
@@ -184,7 +189,7 @@ def simulate(best_robot, scenario, controller, steps):
 
 def run(batches, seed, controller, scenario, testing=False):
     for iteration in range(batches):
-        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_search(seed=seed,
+        best_structures, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolutionary_search(
                                                                                                      controller=controller,
                                                                                                      scenario=scenario)
         print(f"===== Iteration {iteration} =====")

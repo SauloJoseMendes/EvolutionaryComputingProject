@@ -64,13 +64,30 @@ def create_population(scenario):
     return population
 
 
-def de_mutation(population: List[NeuralController], F=0.5):
-    mutated = []
-    for i in range(len(population)):
-        a, b, c = population[np.random.choice(len(population), 3, replace=False)]
-        donor = a + F * (b - c)  # DE-style mutation
-        mutated.append(donor)
-    return mutated
+def de_mutation(population: List[NeuralController]) -> Tuple[NeuralController, np.ndarray]:
+    # Select three distinct parents for DE mutation
+    indices = np.random.choice(len(population), 3, replace=False)
+    a, b, c = population[indices[0]], population[indices[1]], population[indices[2]]
+
+    # Get their weights
+    w_a = get_weights(a)
+    w_b = get_weights(b)
+    w_c = get_weights(c)
+
+    # DE mutation: create donor
+    donor = [wa + 0.5 * (wb - wc) for wa, wb, wc in zip(w_a, w_b, w_c)]
+
+    # Crossover: binomial crossover (DE/rand/1/bin)
+    target = get_weights(a)
+    trial = []
+    for i in range(len(target)):
+        if np.random.rand() < 0.9:  # crossover rate CR = 0.9
+            trial.append(donor[i])
+        else:
+            trial.append(target[i])
+
+    # Create new controller with trial vector
+    return a, np.array(trial)
 
 
 def evaluate_controller_fitness(controller, scenario, view=False):
@@ -233,9 +250,11 @@ def evolve(scenario: str):
 
             # Generate children until full size
             children: List[NeuralController] = []
-            for _ in range(len(population) - ELITISM_SIZE):
-                # mutate here
-                print("hi")
+            while len(children) < len(population) - ELITISM_SIZE:
+                child, weights = de_mutation(population)
+                new_child = copy.deepcopy(child)
+                set_weights(new_child, weights)
+                children.append(new_child)
 
             # New population
             population = elites + children
@@ -261,7 +280,7 @@ def save(data_csv, scenario):
     torch.save(best_weights, weights_filename)
 
 
-def run(scenario, testing=False, batches=1):
+def run(scenario, batches=1):
     for iteration in range(batches):
         best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(scenario=scenario)
         print(f"===== Iteration {iteration} =====")

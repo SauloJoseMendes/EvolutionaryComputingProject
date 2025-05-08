@@ -181,14 +181,6 @@ def save_to_csv(data_csv, seed, controller, scenario, testing):
     df.to_csv(filename, index=False)
 
 
-def simulate(best_robot, scenario, controller, steps):
-    i = 0
-    while i < 10:
-        utils.simulate_best_robot(best_robot, scenario=scenario, steps=steps)
-        i += 1
-    controller = Controller.Controller(controller)
-    utils.create_gif(best_robot, filename='random_search.gif', scenario=scenario, steps=steps, controller=controller)
-
 
 def run(batches, seed, controller, scenario, testing=False):
     for iteration in range(batches):

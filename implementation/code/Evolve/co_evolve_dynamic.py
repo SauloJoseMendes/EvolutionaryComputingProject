@@ -3,6 +3,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 import evogym
+import numpy as np
 import pandas as pd
 import torch
 from evogym.envs import *
@@ -30,8 +31,8 @@ def save(data_csv, scenario):
     best_genomes = data_csv.pop("Best Genomes")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    run_path = f"../../evolve_both/static/data/runs/{scenario}/{NUM_GENERATIONS}"
-    genomes_path = f"../../evolve_both/static/data/genomes/{scenario}/{NUM_GENERATIONS}"
+    run_path = f"../../evolve_both/dynamic/data/runs/{scenario}/{NUM_GENERATIONS}"
+    genomes_path = f"../../evolve_both/dynamic/data/genomes/{scenario}/{NUM_GENERATIONS}"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -53,6 +54,7 @@ def initialize_population(scenario) -> List[Genome]:
 
 
 def evaluate(individual: Genome, scenario: str, view: bool = False) -> Tuple[float, float]:
+
     """Evaluate the fitness of a single individual by decoding and testing its joint components."""
     try:
         controller = individual.get_controller()
@@ -65,14 +67,12 @@ def evaluate(individual: Genome, scenario: str, view: bool = False) -> Tuple[flo
                        body=robot,
                        connections=connections)
 
-        # 2. Reset & get initial state
         state = env.reset()
         # Check compatibility
-        w = env.observation_space.shape[0]
-        z = env.action_space.shape[0]
-        isCompatible, penalty = individual.get_controller().check_compatibility(w, z)
-        if isCompatible is False:
-            return penalty, 0
+        required_inputs = env.observation_space.shape[0]
+        required_outputs = env.action_space.shape[0]
+        controller.adjust_to_environment(required_inputs,required_outputs)
+
         # if Gym returns (obs, info) tuple, unpack it
         if isinstance(state, tuple):
             state = state[0]
@@ -104,6 +104,10 @@ def evaluate(individual: Genome, scenario: str, view: bool = False) -> Tuple[flo
                                       dtype=torch.float32).unsqueeze(0)
             action_tensor = controller(obs_tensor)
             action = action_tensor.detach().cpu().numpy().squeeze()
+            if action.ndim > 1:
+                action = action.squeeze(0)  # Remove batch dim if present
+            elif action.ndim == 0:  # Handle scalar case
+                action = np.array([action])  # Convert to 1D array
             # ─────────────────────────
             # Step the sim
             state, reward, terminated, truncated, info = env.step(action)
@@ -235,13 +239,22 @@ def evolve(scenario: str, debug=False):
 
             # print(graph_to_matrix(population[current_best_fitness_idx]))
 
-            # Track average
             fitness_scores = np.array(fitness_scores)
             rewards = np.array(rewards)
-            fitness_scores = fitness_scores[np.isfinite(fitness_scores)]
-            rewards = rewards[np.isfinite(rewards)]
-            avg_fitness[generation] = np.nanmean(fitness_scores)
-            avg_rewards[generation] = np.nanmean(rewards)
+
+
+            # Track average
+            fitness_scores_c = fitness_scores[np.isfinite(fitness_scores)]
+            rewards_c = rewards[np.isfinite(rewards)]
+            if rewards_c.shape[0] == 0:
+                avg_rewards[generation] = np.nan
+            else:
+                avg_rewards[generation] = np.nanmean(rewards_c)
+            if fitness_scores_c.shape[0] == 0:
+                avg_fitness[generation] = np.nan
+            else:
+                avg_fitness[generation] = np.nanmean(fitness_scores_c)
+
 
             # Elitism: keep top 2
             elites = elitism(population, list(fitness_scores))

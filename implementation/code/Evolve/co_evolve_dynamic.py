@@ -17,10 +17,10 @@ SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
 BATCH_SIZE = 1
-NUM_GENERATIONS_BOTH = 30
-NUM_GENERATIONS_SINGLE = 20
+NUM_GENERATIONS_BOTH = 100
+NUM_GENERATIONS_SINGLE = 150
 NUM_GENERATIONS = NUM_GENERATIONS_BOTH + NUM_GENERATIONS_SINGLE
-POPULATION_SIZE = 20
+POPULATION_SIZE = 100
 TOURNAMENT_SIZE = 3
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
@@ -33,8 +33,8 @@ def save(data_csv, scenario):
     best_genomes = data_csv.pop("Best Genomes")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    run_path = f"../../evolve_both/dynamic/data/runs/{scenario}/{NUM_GENERATIONS}"
-    genomes_path = f"../../evolve_both/dynamic/data/genomes/{scenario}/{NUM_GENERATIONS}"
+    run_path = f"../../evolve_both/dynamic/data/runs/{scenario}/{NUM_GENERATIONS}/"
+    genomes_path = f"../../evolve_both/dynamic/data/genomes/{scenario}/{NUM_GENERATIONS}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -220,7 +220,7 @@ def evolve(scenario: str, debug=True):
     # Initialize population
     population = initialize_population(scenario)
     both = True
-    with (ProcessPoolExecutor(max_workers=os.cpu_count()) as executor):
+    with (ProcessPoolExecutor(max_workers=6) as executor):
         for generation in range(NUM_GENERATIONS):
             if generation > NUM_GENERATIONS_BOTH:
                 both = False
@@ -300,5 +300,5 @@ def run(scenario, batches=1):
 
 
 if __name__ == '__main__':
-    for _scenario in ['GapJumper-v0']:
+    for _scenario in SCENARIOS:
         run(batches=1, scenario=_scenario)

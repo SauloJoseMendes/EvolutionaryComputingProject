@@ -3,13 +3,15 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib
+
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-from scipy.stats import mannwhitneyu, wilcoxon
+from scipy.stats import wilcoxon
 
 
 class CompareImplementations:
-    def __init__(self, implementation1_name: str, implementation2_name: str):
+    def __init__(self, implementation1_name: str, implementation2_name: str, scenario: str):
+        self.scenario = scenario
         self.implementation_1_name = implementation1_name
         self.implementation_2_name = implementation2_name
         self.implementation_1 = {}
@@ -73,12 +75,13 @@ class CompareImplementations:
 
         plt.xlabel("Row Index")
         plt.ylabel(column_name)
-        plt.title(f"Row-wise Comparison of {column_name}")
+        plt.title(f"Comparison of {column_name} on {self.scenario}")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
         if save_path:
-            filename = os.path.join(save_path, f"{column_name} comparison.png")
+            filename = os.path.join(save_path, f"{self.scenario}/{column_name}"
+                                               f"_{self.implementation_1}_vs_{self.implementation_2}.png")
             plt.savefig(filename)
             print(f"Saved per-seed plot to {filename}")
         else:
@@ -117,9 +120,12 @@ class CompareImplementations:
         else:
             print("  Result: No statistically significant difference.")
 
+
 if __name__ == "__main__":
-    comparison = CompareImplementations()
-    comparison.load_and_process_folders('/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_controller/DE/runs/DownStepper-v0/250'
-                                        , '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_controller/DE/runs/ObstacleTraverser-v0/250')
+    comparison = CompareImplementations("DE", "GA", "DownStepper-v0")
+    comparison.load_and_process_folders(
+        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_controller/DE/runs/DownStepper-v0/250'
+        ,
+        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_controller/GA+ES/runs/DownStepper-v0/250')
     comparison.plot_comparison('Best Fitness')
     comparison.compare_statistically('Best Fitness')

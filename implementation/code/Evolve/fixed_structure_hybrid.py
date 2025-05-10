@@ -258,8 +258,8 @@ def save(data_csv, seed, scenario):
     best_weights = data_csv.pop("Best Weights")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    run_path = f"../../evolve_controller/GA_ES/data/runs/{scenario}/{POPULATION_SIZE}"
-    weights_path = f"../../evolve_controller/GA_ES/data/weights/{scenario}/{POPULATION_SIZE}"
+    run_path = f"../../evolve_controller/GA_ES/runs/{scenario}/{POPULATION_SIZE}"
+    weights_path = f"../../evolve_controller/GA_ES/weights/{scenario}/{POPULATION_SIZE}"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"

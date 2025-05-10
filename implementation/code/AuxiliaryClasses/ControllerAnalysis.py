@@ -137,5 +137,5 @@ class ControllerAnalysisTemporal:
 if __name__ == "__main__":
     analyzer = ControllerAnalysisTemporal(base_path="../../evolve_structure/GP/testing/fixed_controller/")
     analyzer.load_temporal_data()
-    analyzer.plot_temporal_curves(save_path="../../evolve_structure/plots")
+    analyzer.plot_temporal_curves(save_path="../../plots")
     analyzer.statistical_test()

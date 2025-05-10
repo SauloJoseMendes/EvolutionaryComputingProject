@@ -110,10 +110,10 @@ def convert_last_row_to_matrix(csv_file_path):
 
 def simulate(best_robot, scenario, save_path, controller='alternating_gait', steps=500):
     # simulate_best_robot(best_robot, scenario=scenario, steps=steps, controller=controller)
-    create_gif(best_robot, filename=save_path, scenario=scenario, steps=steps)
+    create_gif(best_robot, filename=save_path, scenario=scenario, steps=30)
 
 
 if __name__ == '__main__':
     robot = convert_last_row_to_matrix(
-        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_structure/ES/data/fixed_controller/alternating_gait/BridgeWalker-v0/2025_05_08_at_13_20_30.csv')
-    simulate(robot, "BridgeWalker-v0", "/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/gifs/evolve_structure/ES/alternating_gait/BridgeWalker-v0/2025_05_08_at_13_20_30.gif")
+        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_structure/GP/data/fixed_controller/alternating_gait/Walker-v0/2025_05_02_at_05_41_51.csv')
+    simulate(robot, "Walker-v0", "/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/gifs/evolve_structure/GP/alternating_gait/Walker-v0/2025_05_02_at_05_41_51.gif")

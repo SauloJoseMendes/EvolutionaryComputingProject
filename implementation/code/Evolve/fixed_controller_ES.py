@@ -205,6 +205,6 @@ def run(batches, seed, controller, scenario, testing=False):
 
 
 if __name__ == "__main__":
-    _SCENARIOS = ['BridgeWalker-v0', 'Walker-v0']
+    _SCENARIOS = ['BridgeWalker-v0','Walker-v0']
     for _scenario in _SCENARIOS:
-        run(batches=1, seed=271828, controller='alternating_gait', scenario=_scenario)
+        run(batches=3, seed=271828, controller='alternating_gait', scenario=_scenario)

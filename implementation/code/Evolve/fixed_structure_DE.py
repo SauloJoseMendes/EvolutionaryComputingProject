@@ -14,9 +14,9 @@ SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0']
 SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
-BATCH_SIZE = 1
-NUM_GENERATIONS = 50
-POPULATION_SIZE = 50
+BATCH_SIZE = 5
+NUM_GENERATIONS = 250
+POPULATION_SIZE = 100
 MUTATION_RATE = 0.4
 ELITISM_SIZE = 2
 
@@ -268,8 +268,8 @@ def save(data_csv, scenario):
     best_weights = data_csv.pop("Best Weights")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    run_path = f"../../evolve_controllerdata/runs/{scenario}/{NUM_GENERATIONS}"
-    weights_path = f"../../evolve_controller/GA+ES/data/weights/{scenario}/{NUM_GENERATIONS}"
+    run_path = f"../../evolve_controllerdata/runs/{scenario}/{NUM_GENERATIONS}/"
+    weights_path = f"../../evolve_controller/GA+ES/data/weights/{scenario}/{NUM_GENERATIONS}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -303,4 +303,4 @@ def run(scenario, batches=1):
 
 if __name__ == '__main__':
     for _scenario in SCENARIOS:
-        run(batches=3, scenario=_scenario)
+        run(batches=2, scenario=_scenario)

@@ -268,7 +268,7 @@ def save(data_csv, scenario):
     best_weights = data_csv.pop("Best Weights")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    run_path = f"../../evolve_controllerdata/runs/{scenario}/{NUM_GENERATIONS}/"
+    run_path = f"../../evolve_controller/DE/data/runs/{scenario}/{NUM_GENERATIONS}/"
     weights_path = f"../../evolve_controller/GA+ES/data/weights/{scenario}/{NUM_GENERATIONS}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)

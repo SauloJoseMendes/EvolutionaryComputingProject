@@ -254,12 +254,12 @@ def evolve(scenario: str):
     return best_weights, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
 
-def save(data_csv, seed, scenario):
+def save(data_csv, scenario):
     best_weights = data_csv.pop("Best Weights")
     # Create a DataFrame
     df = pd.DataFrame(data_csv)
-    run_path = f"../../evolve_controller/GA_ES/runs/{scenario}/{POPULATION_SIZE}"
-    weights_path = f"../../evolve_controller/GA_ES/weights/{scenario}/{POPULATION_SIZE}"
+    run_path = f"../../evolve_controller/GA_ES/runs/{scenario}/{NUM_GENERATIONS}/"
+    weights_path = f"../../evolve_controller/GA_ES/weights/{scenario}/{NUM_GENERATIONS}/"
     # Create all intermediate directories if they don't exist
     os.makedirs(run_path, exist_ok=True)
     run_filename = run_path + time.strftime("%Y_%m_%d_at_%H_%M_%S") + ".csv"
@@ -271,7 +271,7 @@ def save(data_csv, seed, scenario):
     torch.save(best_weights, weights_filename)
 
 
-def run(scenario, testing=False, batches=1):
+def run(scenario, batches=1):
     for iteration in range(batches):
         best_weights, best_fitnesses, best_rewards, avg_fitness, avg_reward = evolve(scenario=scenario)
         print(f"===== Iteration {iteration} =====")
@@ -284,7 +284,7 @@ def run(scenario, testing=False, batches=1):
             "Best Reward": best_rewards,
             "Best Weights": best_weights,
         }
-        save(data, scenario, testing)
+        save(data_csv=data, scenario=scenario)
         # Visualize the best structure
         # print("Visualizing the best robot...")
         # evaluate_structure_fitness(best_structures[-1], view=True)

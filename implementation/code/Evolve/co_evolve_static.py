@@ -1,12 +1,13 @@
 import copy
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from functools import partial
 
 import evogym
 import pandas as pd
 import torch
 from evogym.envs import *
-
+import fixed_structure_hybrid as fs_h
 import fixed_controller_GP as es
 import fixed_structure_hybrid as ec
 from AuxiliaryClasses.Genome import Genome
@@ -180,7 +181,13 @@ def elitism(population: List[Genome], fitness_scores: List[float]) -> List[Genom
     sorted_idx = np.argsort(fitness_scores)[::-1][:ELITISM_SIZE]
     return [copy.deepcopy(population[i]) for i in sorted_idx]
 
-
+def safe_evaluate(individual, scenario):
+    try:
+        # Your original evaluation logic
+        return evaluate(individual, scenario=scenario)
+    except Exception as e:
+        print(f"Evaluation crashed for individual: {e}")
+        return (-np.inf, -np.inf)
 def evolve(scenario: str, debug=True):
     """
     Runs an EA to evolve NeuralController weights for the given scenario.
@@ -217,15 +224,24 @@ def evolve(scenario: str, debug=True):
     # Initialize population
     population = initialize_population(scenario)
     both = True
-    with (ProcessPoolExecutor(max_workers=6) as executor):
+    with (ProcessPoolExecutor(max_workers=4) as executor):
         for generation in range(NUM_GENERATIONS):
             if generation > NUM_GENERATIONS_BOTH:
                 both = False
-            # Parallel fitness evaluation
-            evaluator = partial(evaluate,
-                                scenario=scenario)
-
-            fitness_scores, rewards = filter_results(list(executor.map(evaluator, population)))
+            try:
+                safe_evaluator = partial(safe_evaluate, scenario=scenario)
+                # Map the safe evaluator across the population
+                results = list(executor.map(safe_evaluator, population))
+                fitness_scores, rewards = filter_results(results)
+            except BrokenProcessPool:
+                print("Warning: Process pool crashed completely")
+                # Fallback values for entire population
+                fitness_scores = np.full(len(population), -np.inf)
+                rewards = np.full(len(population), -np.inf)
+            except Exception as e:
+                print(f"Unexpected error during parallel evaluation: {e}")
+                fitness_scores = np.full(len(population), -np.inf)
+                rewards = np.full(len(population), -np.inf)
 
             # Track best individual
             current_best_fitness_idx = np.argmax(fitness_scores)
@@ -297,5 +313,9 @@ def run(scenario, batches=1):
 
 
 if __name__ == '__main__':
-    for _scenario in ['GapJumper-v0']:
+    for _scenario in ['CaveCrawler-v0']:
         run(batches=5, scenario=_scenario)
+
+    print("\n\n\n\n VOU CORRER AGORA F_S\n\n\n")
+    for _scenario in ['DownStepper-v0', 'ObstacleTraverser-v0']:
+        fs_h.run(batches=5, scenario=_scenario)

@@ -16,7 +16,7 @@ SCENARIOS = ['GapJumper-v0', 'CaveCrawler-v0']
 SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters
-BATCH_SIZE = 1
+BATCH_SIZE = 3
 NUM_GENERATIONS_BOTH = 100
 NUM_GENERATIONS_SINGLE = 150
 NUM_GENERATIONS = NUM_GENERATIONS_BOTH + NUM_GENERATIONS_SINGLE
@@ -301,4 +301,4 @@ def run(scenario, batches=1):
 
 if __name__ == '__main__':
     for _scenario in SCENARIOS:
-        run(batches=1, scenario=_scenario)
+        run(batches=BATCH_SIZE, scenario=_scenario)

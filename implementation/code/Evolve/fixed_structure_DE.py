@@ -10,7 +10,7 @@ from evogym.envs import *
 from AuxiliaryClasses.NeuralController import NeuralController, initialize_weights, get_weights, set_weights
 import numpy as np
 
-SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0']
+SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0-v0']
 SEEDS = [42, 0, 123, 987, 314159, 271828, 2 ** 32 - 1]
 
 # EA Parameters

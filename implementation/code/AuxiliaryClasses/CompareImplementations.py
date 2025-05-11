@@ -38,15 +38,39 @@ class CompareImplementations:
             raise ValueError(f"No CSV files found in {folder_path}")
         return dataframes
 
+    import numpy as np
+    import pandas as pd
+
     def _compute_mean_std(self, dfs):
-        combined = pd.concat(dfs, axis=0, keys=range(len(dfs)))
         mean_dict = {}
         std_dict = {}
 
-        for column in dfs[0].columns:
-            stacked = np.stack([df[column].values for df in dfs])
-            mean_dict[column] = stacked.mean(axis=0).tolist()
-            std_dict[column] = stacked.std(axis=0).tolist()
+        # Find the minimum number of rows among all dataframes
+        min_len = min(len(df) for df in dfs)
+
+        # Clip all dataframes to the same number of rows
+        clipped_dfs = [df.iloc[:min_len].copy() for df in dfs]
+
+        for column in clipped_dfs[0].columns:
+            try:
+                # Collect column data across all dataframes
+                data = [df[column].values for df in clipped_dfs]
+
+                # Convert to float and mask invalid values (NaN, inf)
+                clean_data = []
+                for arr in data:
+                    arr = arr.astype(float)
+                    arr = np.where(np.isfinite(arr), arr, np.nan)  # Replace inf and -inf with NaN
+                    clean_data.append(arr)
+
+                stacked = np.stack(clean_data)
+
+                # Use nanmean and nanstd to ignore NaNs
+                mean_dict[column] = np.nanmean(stacked, axis=0).tolist()
+                std_dict[column] = np.nanstd(stacked, axis=0).tolist()
+
+            except Exception:
+                continue  # Skip non-numeric or incompatible columns
 
         return mean_dict, std_dict
 
@@ -54,20 +78,28 @@ class CompareImplementations:
         if column_name not in self.implementation_1 or column_name not in self.implementation_2:
             raise ValueError(f"Column '{column_name}' not found in one of the implementations.")
 
-        x = list(range(len(self.implementation_1[column_name])))
         y1 = self.implementation_1[column_name]
         y2 = self.implementation_2[column_name]
         std1 = self.std_implementation_1[column_name]
         std2 = self.std_implementation_2[column_name]
+        # Find the minimum length among all lists
+        min_len = min(len(y1), len(y2), len(std1), len(std2))
+
+        # Clip all lists to the minimum length
+        y1 = y1[:min_len]
+        y2 = y2[:min_len]
+        std1 = std1[:min_len]
+        std2 = std2[:min_len]
+        x = list(range(min_len))
 
         plt.figure(figsize=(12, 6))
-        plt.plot(x, y1, label='Implementation 1', color='skyblue')
+        plt.plot(x, y1, label=self.implementation_1_name, color='skyblue')
         plt.fill_between(x,
                          np.array(y1) - np.array(std1),
                          np.array(y1) + np.array(std1),
                          color='skyblue', alpha=0.3)
 
-        plt.plot(x, y2, label='Implementation 2', color='salmon')
+        plt.plot(x, y2, label=self.implementation_2_name, color='salmon')
         plt.fill_between(x,
                          np.array(y2) - np.array(std2),
                          np.array(y2) + np.array(std2),
@@ -81,9 +113,8 @@ class CompareImplementations:
         plt.tight_layout()
         if save_path:
             filename = os.path.join(save_path, f"{self.scenario}/{column_name}"
-                                               f"_{self.implementation_1}_vs_{self.implementation_2}.png")
+                                               f"_{self.implementation_1_name}_vs_{self.implementation_2_name}.png")
             plt.savefig(filename)
-            print(f"Saved per-seed plot to {filename}")
         else:
             plt.show()
 
@@ -94,8 +125,10 @@ class CompareImplementations:
         data1 = np.array(self.implementation_1[column_name])
         data2 = np.array(self.implementation_2[column_name])
 
-        if len(data1) != len(data2):
-            raise ValueError("Data lengths must match for Wilcoxon signed-rank test.")
+        # Clip both arrays to the minimum length
+        min_len = min(len(data1), len(data2))
+        data1 = data1[:min_len]
+        data2 = data2[:min_len]
 
         # Wilcoxon signed-rank test
         stat, p_value = wilcoxon(data1, data2)
@@ -107,14 +140,14 @@ class CompareImplementations:
         print(f"\nStatistical Comparison of '{column_name}' Using Wilcoxon Signed-Rank Test:")
         print(f"  Wilcoxon statistic: {stat:.4f}")
         print(f"  p-value: {p_value:.4f}")
-        print(f"  Mean difference (Implementation 1 - Implementation 2): {mean_diff:.4f}")
+        print(f"  Mean difference ({self.implementation_1_name} vs {self.implementation_2_name}): {mean_diff:.4f}")
 
         if p_value < 0.05:
             print("  Result: Statistically significant difference between implementations.")
             if mean_diff > 0:
-                print("  Interpretation: Implementation 1 performs better on average.")
+                print(f"  Interpretation: {self.implementation_1_name} performs better on average.")
             elif mean_diff < 0:
-                print("  Interpretation: Implementation 2 performs better on average.")
+                print(f"  Interpretation: {self.implementation_2_name} performs better on average.")
             else:
                 print("  Interpretation: No practical difference detected.")
         else:
@@ -122,10 +155,11 @@ class CompareImplementations:
 
 
 if __name__ == "__main__":
-    comparison = CompareImplementations("DE", "GA", "DownStepper-v0")
+    comparison = CompareImplementations("Fixed-Size Controllers", "Dynamic-Size Controllers", "CaveCrawler-v0")
     comparison.load_and_process_folders(
-        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_controller/DE/runs/DownStepper-v0/250'
+        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_both/static/data/runs/CaveCrawler-v0/250'
         ,
-        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_controller/GA+ES/runs/DownStepper-v0/250')
-    comparison.plot_comparison('Best Fitness')
-    comparison.compare_statistically('Best Fitness')
+        '/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/evolve_both/dynamic/data/runs/CaveCrawler-v0/250')
+    for column in ['Average Fitness', 'Average Reward', 'Best Fitness', 'Best Reward']:
+        comparison.plot_comparison(column, save_path="/Users/sjmendes/Documents/Universidade/Mestrado/1_ano/2_semestre/EC/Project/implementation/plots")
+        comparison.compare_statistically(column)

@@ -10,7 +10,7 @@ from evogym.envs import *
 from AuxiliaryClasses.NeuralController import NeuralController, initialize_weights, get_weights, set_weights
 import numpy as np
 
-SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0']
+SCENARIOS = ['DownStepper-v0', 'ObstacleTraverser-v0-v0']
 
 # EA Parameters
 BATCH_SIZE = 1
@@ -249,7 +249,7 @@ def evolve(scenario: str):
 
             # New population
             population = elites + children
-            # print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
+            print(f"Generation {generation + 1}/{NUM_GENERATIONS} best fitness: {max(fitnesses):.3f}")
 
     return best_weights, best_fitnesses, best_rewards, avg_fitness, avg_rewards
 
@@ -292,5 +292,5 @@ def run(scenario, batches=1):
 
 
 if __name__ == '__main__':
-    for _scenario in ['ObstacleTraverser-v0']:
+    for _scenario in ['ObstacleTraverser-v0-v0']:
         run(batches=3,  scenario=_scenario)

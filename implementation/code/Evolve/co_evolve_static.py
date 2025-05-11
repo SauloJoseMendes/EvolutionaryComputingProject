@@ -317,5 +317,5 @@ if __name__ == '__main__':
         run(batches=5, scenario=_scenario)
 
     print("\n\n\n\n VOU CORRER AGORA F_S\n\n\n")
-    for _scenario in ['DownStepper-v0', 'ObstacleTraverser-v0']:
+    for _scenario in ['DownStepper-v0', 'ObstacleTraverser-v0-v0']:
         fs_h.run(batches=5, scenario=_scenario)
